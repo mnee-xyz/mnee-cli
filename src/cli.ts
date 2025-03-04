@@ -14,52 +14,65 @@ const mneeService = new MNEEService();
 const program = new Command();
 const SERVICE_NAME = "mnee-cli";
 
+const safePrompt = async (questions: any) => {
+  try {
+    return await inquirer.prompt(questions);
+  } catch {
+    console.log("\n❌ Operation cancelled by user.");
+    process.exit(1);
+  }
+};
+
 program
   .command("create")
   .description("Generate a new wallet and store keys securely")
   .action(async () => {
-    const existingAddress = await keytar.getPassword(
-      SERVICE_NAME,
-      "walletAddress"
-    );
-    if (existingAddress) {
-      console.error(
-        "❌ Wallet already exists. Run `mnee export-key` to retrieve keys."
+    try {
+      const existingAddress = await keytar.getPassword(
+        SERVICE_NAME,
+        "walletAddress"
       );
-      return;
+      if (existingAddress) {
+        console.error(
+          "❌ Wallet already exists. Run `mnee export-key` to retrieve keys."
+        );
+        return;
+      }
+
+      const entropy = crypto.randomBytes(32);
+      const privateKey = PrivateKey.fromString(entropy.toString("hex"));
+      const address = privateKey.toAddress();
+
+      const { password, confirmPassword } = await safePrompt([
+        {
+          type: "password",
+          name: "password",
+          message: "Set a password for your wallet:",
+          mask: "*",
+        },
+        {
+          type: "password",
+          name: "confirmPassword",
+          message: "Confirm your password:",
+          mask: "*",
+        },
+      ]);
+
+      if (password !== confirmPassword) {
+        console.error("❌ Passwords do not match. Try again.");
+        return;
+      }
+
+      const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
+
+      await keytar.setPassword(SERVICE_NAME, "privateKey", encryptedKey);
+      await keytar.setPassword(SERVICE_NAME, "walletAddress", address);
+
+      console.log("\n✅ Wallet created successfully!");
+      console.log(`\n${address}\n`);
+    } catch (error) {
+      console.error("\n❌ Error creating wallet:", error);
     }
-
-    const entropy = crypto.randomBytes(32);
-    const privateKey = PrivateKey.fromString(entropy.toString("hex"));
-    const address = privateKey.toAddress();
-
-    const { password, confirmPassword } = await inquirer.prompt([
-      {
-        type: "password",
-        name: "password",
-        message: "Set a password for your wallet:",
-        mask: "*",
-      },
-      {
-        type: "password",
-        name: "confirmPassword",
-        message: "Confirm your password:",
-        mask: "*",
-      },
-    ]);
-
-    if (password !== confirmPassword) {
-      console.error("❌ Passwords do not match. Try again.");
-      return;
-    }
-
-    const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
-
-    await keytar.setPassword(SERVICE_NAME, "privateKey", encryptedKey);
-    await keytar.setPassword(SERVICE_NAME, "walletAddress", address);
-
-    console.log("\n✅ Wallet created successfully!");
-    console.log(`\n${address}\n`);
   });
 
 program
@@ -94,145 +107,160 @@ program
   .command("transfer")
   .description("Transfer MNEE to another address")
   .action(async () => {
-    const address = await keytar.getPassword(SERVICE_NAME, "walletAddress");
-    if (!address) {
-      console.error("❌ No wallet found. Run `mnee create-wallet` first.");
-      return;
-    }
+    try {
+      const address = await keytar.getPassword(SERVICE_NAME, "walletAddress");
+      if (!address) {
+        console.error("❌ No wallet found. Run `mnee create-wallet` first.");
+        return;
+      }
 
-    const { amount, toAddress } = await inquirer.prompt([
-      {
-        type: "input",
-        name: "amount",
-        message: "Enter the amount to transfer:",
-      },
-      {
-        type: "input",
-        name: "toAddress",
-        message: "Enter the recipient's address:",
-      },
-    ]);
+      const { amount, toAddress } = await safePrompt([
+        {
+          type: "input",
+          name: "amount",
+          message: "Enter the amount to transfer:",
+        },
+        {
+          type: "input",
+          name: "toAddress",
+          message: "Enter the recipient's address:",
+        },
+      ]);
 
-    const { password } = await inquirer.prompt([
-      {
-        type: "password",
-        name: "password",
-        message: "Enter your wallet password:",
-        mask: "*",
-      },
-    ]);
+      const { password } = await safePrompt([
+        {
+          type: "password",
+          name: "password",
+          message: "Enter your wallet password:",
+          mask: "*",
+        },
+      ]);
 
-    const encryptedKey = await keytar.getPassword(SERVICE_NAME, "privateKey");
+      const encryptedKey = await keytar.getPassword(SERVICE_NAME, "privateKey");
+      if (!encryptedKey) {
+        console.error("❌ No wallet found. Run `mnee create-wallet` first.");
+        return;
+      }
 
-    if (!encryptedKey) {
-      console.error("❌ No wallet found. Run `mnee create-wallet` first.");
-      return;
-    }
+      const privateKeyHex = decryptPrivateKey(encryptedKey, password);
+      if (!privateKeyHex) {
+        console.error("❌ Incorrect password! Decryption failed.");
+        return;
+      }
 
-    const privateKeyHex = decryptPrivateKey(encryptedKey, password);
-    if (!privateKeyHex) {
-      console.error("❌ Incorrect password! Decryption failed.");
-      return;
-    }
+      const privateKey = PrivateKey.fromString(privateKeyHex);
+      const request = [
+        { address: toAddress, amount: parseFloat(amount) },
+      ] as SendMNEE[];
 
-    const privateKey = PrivateKey.fromString(privateKeyHex);
-
-    const request = [
-      { address: toAddress, amount: parseFloat(amount) },
-    ] as SendMNEE[];
-
-    singleLineLogger.start("Transferring MNEE...");
-    const { txid, error } = await mneeService.transfer(
-      address,
-      request,
-      privateKey,
-      singleLineLogger
-    );
-    if (!txid) {
-      singleLineLogger.done(
-        `❌ Transfer failed. ${error ? error : "Please try again."}`
+      singleLineLogger.start("Transferring MNEE...");
+      const { txid, error } = await mneeService.transfer(
+        address,
+        request,
+        privateKey,
+        singleLineLogger
       );
-      return;
+      if (!txid) {
+        singleLineLogger.done(
+          `❌ Transfer failed. ${error ? error : "Please try again."}`
+        );
+        return;
+      }
+      singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
+    } catch (error) {
+      console.log("\n❌ Operation interrupted.");
+      process.exit(1);
     }
-    singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
   });
 
 program
   .command("export")
   .description("Decrypt and retrieve your private key in WIF format")
   .action(async () => {
-    const { password } = await inquirer.prompt([
-      {
-        type: "password",
-        name: "password",
-        message: "Enter your wallet password:",
-        mask: "*",
-      },
-    ]);
+    try {
+      const { password } = await safePrompt([
+        {
+          type: "password",
+          name: "password",
+          message: "Enter your wallet password:",
+          mask: "*",
+        },
+      ]);
 
-    const encryptedKey = await keytar.getPassword(SERVICE_NAME, "privateKey");
-    const address = await keytar.getPassword(SERVICE_NAME, "walletAddress");
+      const encryptedKey = await keytar.getPassword(SERVICE_NAME, "privateKey");
+      const address = await keytar.getPassword(SERVICE_NAME, "walletAddress");
 
-    if (!encryptedKey || !address) {
-      console.error("❌ No wallet found. Run `mnee create-wallet` first.");
-      return;
+      if (!encryptedKey || !address) {
+        console.error("❌ No wallet found. Run `mnee create-wallet` first.");
+        return;
+      }
+
+      const { confirm } = await safePrompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message: "You are about to expose your private key. Continue?",
+          default: false,
+        },
+      ]);
+
+      if (!confirm) {
+        console.log("🚫 Operation cancelled.");
+        return;
+      }
+
+      const privateKeyHex = decryptPrivateKey(encryptedKey, password);
+      if (!privateKeyHex) {
+        console.error("❌ Incorrect password! Decryption failed.");
+        return;
+      }
+
+      const privateKey = PrivateKey.fromString(privateKeyHex);
+      const wif = privateKey.toWif();
+
+      console.log("\nWallet Address:\n", address);
+      console.log("\nWIF Private Key:\n", wif);
+      console.log("\n🚨 Keep this key SAFE! Never share it with anyone.\n");
+    } catch (error) {
+      console.error("\n❌ Error exporting private key:", error);
     }
-
-    const { confirm } = await inquirer.prompt([
-      {
-        type: "confirm",
-        name: "confirm",
-        message: "You are about to expose your private key. Continue?",
-        default: false,
-      },
-    ]);
-
-    if (!confirm) {
-      console.log("🚫 Operation cancelled.");
-      return;
-    }
-
-    const privateKeyHex = decryptPrivateKey(encryptedKey, password);
-    if (!privateKeyHex) {
-      console.error("❌ Incorrect password! Decryption failed.");
-      return;
-    }
-
-    const privateKey = PrivateKey.fromString(privateKeyHex);
-    const wif = privateKey.toWif();
-
-    console.log("\nWallet Address:\n", address);
-    console.log("\nWIF Private Key:\n", wif);
-    console.log("\n🚨 Keep this key SAFE! Never share it with anyone.\n");
   });
 
 program
   .command("delete")
   .description("Delete your wallet and all stored keys")
   .action(async () => {
-    const { confirm } = await inquirer.prompt([
-      {
-        type: "confirm",
-        name: "confirm",
-        message: "Are you sure you want to delete your wallet?",
-        default: false,
-      },
-    ]);
+    try {
+      const { confirm } = await safePrompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message: "Are you sure you want to delete your wallet?",
+          default: false,
+        },
+      ]);
 
-    if (!confirm) {
-      console.log("🚫 Operation cancelled.");
-      return;
+      if (!confirm) {
+        console.log("🚫 Operation cancelled.");
+        return;
+      }
+
+      await keytar.deletePassword(SERVICE_NAME, "privateKey");
+      await keytar.deletePassword(SERVICE_NAME, "walletAddress");
+
+      console.log("🗑️ Wallet deleted successfully!");
+    } catch (error) {
+      console.error("\n❌ Error deleting wallet:", error);
     }
-
-    await keytar.deletePassword(SERVICE_NAME, "privateKey");
-    await keytar.deletePassword(SERVICE_NAME, "walletAddress");
-
-    console.log("🗑️ Wallet deleted successfully!");
   });
 
 program.parse(process.argv);
 
-// Display help only if no command is provided
 if (!process.argv.slice(2).length) {
   program.help();
 }
+
+process.on("SIGINT", () => {
+  console.log("\n👋 Exiting program gracefully...");
+  process.exit(0);
+});
