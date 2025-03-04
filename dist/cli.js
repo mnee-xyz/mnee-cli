@@ -19,7 +19,6 @@ const safePrompt = async (questions) => {
         process.exit(1);
     }
 };
-// 🚀 CREATE WALLET
 program
     .command("create")
     .description("Generate a new wallet and store keys securely")
@@ -61,7 +60,6 @@ program
         console.error("\n❌ Error creating wallet:", error);
     }
 });
-// 🚀 GET WALLET ADDRESS
 program
     .command("address")
     .description("Retrieve your wallet address")
@@ -73,7 +71,6 @@ program
     }
     console.log(`\n${address}\n`);
 });
-// 🚀 GET BALANCE
 program
     .command("balance")
     .description("Get the balance of the wallet")
@@ -87,7 +84,6 @@ program
     const { decimalAmount } = await mneeService.getBalance(address);
     singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
 });
-// 🚀 TRANSFER TOKENS
 program
     .command("transfer")
     .description("Transfer MNEE to another address")
@@ -145,7 +141,6 @@ program
         process.exit(1);
     }
 });
-// 🚀 EXPORT PRIVATE KEY
 program
     .command("export")
     .description("Decrypt and retrieve your private key in WIF format")
@@ -192,7 +187,6 @@ program
         console.error("\n❌ Error exporting private key:", error);
     }
 });
-// 🚀 DELETE WALLET
 program
     .command("delete")
     .description("Delete your wallet and all stored keys")
