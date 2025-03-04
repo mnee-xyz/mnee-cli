@@ -31,7 +31,7 @@ mnee
 - `mnee balance`: Check your MNEE balance
 - `mnee transfer`: Transfer MNEE to another address
 - `mnee export`: Decrypt and retrieve your private key
-- `mnee delete`:Delete your wallet and all stored keys
+- `mnee delete`: Delete your wallet and all stored keys
 
 ## Contributing
 
