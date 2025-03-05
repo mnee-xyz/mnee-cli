@@ -238,7 +238,7 @@ export class MNEEService {
                         .writeBin(Utils.toArray(sigResponse.pubKey, "hex"));
                 }
                 // Submit transaction using Axios
-                logger.update("Getting signatures from MNEE Cosigner...");
+                logger.update("Getting signatures...");
                 const base64Tx = Utils.toBase64(tx.toBinary());
                 const response = await axios.post(`${this.mneeApi}/v1/transfer?auth_token=${this.mneeApiToken}`, {
                     rawtx: base64Tx,
