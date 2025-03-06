@@ -1,12 +1,11 @@
 {
   "name": "mnee-cli",
-  "version": "1.0.7",
+  "version": "1.0.5",
   "description": "MNEE CLI tool",
   "main": "dist/cli.js",
   "type": "module",
   "scripts": {
-    "clean": "rm -rf dist",
-    "build": "npm run clean && tsc",
+    "build": "tsc",
     "start": "node dist/cli.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepublishOnly": "npm run build"
@@ -38,8 +37,8 @@
     "axios": "^1.8.1",
     "commander": "^13.1.0",
     "inquirer": "^12.4.2",
-    "keytar": "^7.9.0",
-    "mnee-ops": "^1.0.2"
+    "js-1sat-ord": "^0.1.80",
+    "keytar": "^7.9.0"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

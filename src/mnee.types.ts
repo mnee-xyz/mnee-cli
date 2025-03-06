@@ -42,6 +42,9 @@ export type MNEEUtxo = {
   vout: number;
 };
 
+/**
+ * `SignatureRequest` contains required informations for a signer to sign a certain input of a transaction.
+ */
 export type SignatureRequest = {
   prevTxid: string;
   outputIndex: number;

@@ -9,8 +9,10 @@ import {
   Transaction,
   TransactionSignature,
   UnlockingScript,
-  Utils,
 } from "@bsv/sdk";
+import axios from "axios";
+import * as oneSat from "js-1sat-ord";
+import { Utils } from "@bsv/sdk";
 import {
   GetSignatures,
   MNEEBalance,
@@ -22,42 +24,57 @@ import {
   SignatureResponse,
 } from "./mnee.types.js";
 import CosignTemplate from "./mneeCosignTemplate.js";
-import jsOneSat from "js-1sat-ord";
+import { SingleLineLogger } from "./utils/helper.js";
 
 export class MNEEService {
-  private mneeApiToken = "92982ec1c0975f31979da515d46bae9f";
   private mneeApi = "https://proxy-api.mnee.net";
+  private mneeApiToken = "92982ec1c0975f31979da515d46bae9f";
   private gorillaPoolApi = "https://ordinals.1sat.app";
 
-  constructor(apiToken?: string) {
-    if (apiToken) this.mneeApiToken = apiToken;
-  }
-
-  private async getConfig(): Promise<MNEEConfig | undefined> {
+  getConfig = async (): Promise<MNEEConfig | undefined> => {
     try {
-      const response = await fetch(
-        `${this.mneeApi}/v1/config?auth_token=${this.mneeApiToken}`,
-        { method: "GET" }
+      const { data } = await axios.get<MNEEConfig>(
+        `${this.mneeApi}/v1/config?auth_token=${this.mneeApiToken}`
       );
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-      const data: MNEEConfig = await response.json();
       return data;
     } catch (error) {
       console.error("Failed to fetch config:", error);
-      return undefined;
     }
-  }
+  };
 
-  private toAtomicAmount(amount: number, decimals: number): number {
+  getBalance = async (address: string): Promise<MNEEBalance> => {
+    try {
+      const config = await this.getConfig();
+      if (!config) throw new Error("Config not fetched");
+      const res = await this.getUtxos(address);
+      const balance = res.reduce((acc, utxo) => {
+        if (utxo.data.bsv21.op === "transfer") {
+          acc += utxo.data.bsv21.amt;
+        }
+        return acc;
+      }, 0);
+
+      const decimalAmount = parseFloat(
+        (balance / 10 ** (config.decimals || 0)).toFixed(config.decimals)
+      );
+      const mneeBalance = { amount: balance, decimalAmount };
+
+      return mneeBalance;
+    } catch (error) {
+      console.error("Failed to fetch balance:", error);
+      return { amount: 0, decimalAmount: 0 };
+    }
+  };
+
+  toAtomicAmount(amount: number, decimals: number): number {
     return Math.round(amount * 10 ** decimals);
   }
 
-  private async createInscription(
+  private createInscription = (
     recipient: string,
     amount: number,
     config: MNEEConfig
-  ) {
+  ) => {
     const inscriptionData = {
       p: "bsv-20",
       op: "transfer",
@@ -65,7 +82,7 @@ export class MNEEService {
       amt: amount.toString(),
     };
     return {
-      lockingScript: jsOneSat.applyInscription(
+      lockingScript: oneSat.applyInscription(
         new CosignTemplate().lock(
           recipient,
           PublicKey.fromString(config.approver)
@@ -79,24 +96,18 @@ export class MNEEService {
       ),
       satoshis: 1,
     };
-  }
+  };
 
-  private async getUtxos(
+  getUtxos = async (
     address: string,
     ops: MNEEOperation[] = ["transfer", "deploy+mint"]
-  ): Promise<MNEEUtxo[]> {
+  ): Promise<MNEEUtxo[]> => {
     try {
-      const response = await fetch(
+      const { data } = await axios.post<MNEEUtxo[]>(
         `${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiToken}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify([address]),
-        }
+        [address]
       );
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-      const data: MNEEUtxo[] = await response.json();
+
       if (ops.length) {
         return data.filter((utxo) =>
           ops.includes(
@@ -107,63 +118,63 @@ export class MNEEService {
           )
         );
       }
+
       return data;
     } catch (error) {
       console.error("Failed to fetch UTXOs:", error);
       return [];
     }
-  }
+  };
 
-  private async broadcast(
+  broadcast = async (
     tx: Transaction
-  ): Promise<BroadcastResponse | BroadcastFailure> {
+  ): Promise<BroadcastResponse | BroadcastFailure> => {
     const url = `${this.gorillaPoolApi}/v5/tx`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: Buffer.from(tx.toBinary()),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        return {
-          status: "error",
-          code: response.status.toString(),
-          description: body.error || "Unknown error",
-        } as BroadcastFailure;
-      }
-      return {
-        status: "success",
-        txid: body.txid,
-        message: "Transaction broadcast successfully",
-      } as BroadcastResponse;
-    } catch (error) {
-      console.error("Failed to broadcast:", error);
+
+    const resp = await axios.post<{
+      txid: string;
+      success: boolean;
+      error: string;
+      status: number;
+    }>(url, Buffer.from(tx.toBinary()), {
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+    });
+    const body = resp.data;
+
+    if (resp.status !== 200) {
       return {
         status: "error",
-        code: "UNKNOWN",
-        description: error instanceof Error ? error.message : "Unknown error",
+        code: resp.status.toString(),
+        description: body.error,
       } as BroadcastFailure;
     }
-  }
+    return {
+      status: "success",
+      txid: body.txid,
+      message: "Transaction broadcast successfully",
+    } as BroadcastResponse;
+  };
 
-  private async fetchBeef(txid: string): Promise<Transaction> {
+  fetchBeef = async (txid: string): Promise<Transaction> => {
     const resp = await fetch(`${this.gorillaPoolApi}/v5/tx/${txid}/beef`);
-    if (resp.status === 404) throw new Error("Transaction not found");
+    if (resp.status == 404) throw new Error("Transaction not found");
     if (resp.status !== 200) {
       throw new Error(`${resp.status} - Failed to fetch beef for tx ${txid}`);
     }
     const beef = [...Buffer.from(await resp.arrayBuffer())];
     return Transaction.fromAtomicBEEF(beef);
-  }
+  };
 
-  private async getSignatures(
+  getSignatures = async (
     request: GetSignatures,
     privateKey: PrivateKey
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{
     sigResponses?: SignatureResponse[];
     error?: { message: string; cause?: any };
-  }> {
+  }> => {
     try {
       const DEFAULT_SIGHASH_TYPE = 65;
       let tx: Transaction;
@@ -181,6 +192,7 @@ export class MNEEService {
       const sigResponses: SignatureResponse[] = request.sigRequests.flatMap(
         (sigReq: SignatureRequest) => {
           return [privateKey].map((privKey: PrivateKey) => {
+            // TODO: support multiple OP_CODESEPARATORs and get subScript according to `csIdx`. See SignatureRequest.csIdx in the GetSignatures type.
             const preimage = TransactionSignature.format({
               sourceTXID: sigReq.prevTxid,
               sourceOutputIndex: sigReq.outputIndex,
@@ -215,6 +227,8 @@ export class MNEEService {
         }
       );
       return Promise.resolve({ sigResponses });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error("getSignatures error", err);
       return {
@@ -224,12 +238,14 @@ export class MNEEService {
         },
       };
     }
-  }
+  };
 
-  public async transfer(
+  transfer = async (
+    address: string,
     request: SendMNEE[],
-    wif: string
-  ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+    privateKey: PrivateKey,
+    logger: SingleLineLogger
+  ): Promise<{ txid?: string; rawtx?: string; error?: string }> => {
     try {
       const config = await this.getConfig();
       if (!config) throw new Error("Config not fetched");
@@ -241,17 +257,19 @@ export class MNEEService {
         config.decimals
       );
 
-      const privateKey = PrivateKey.fromWif(wif);
-      const address = privateKey.toAddress();
+      // Fetch UTXOs
+      logger.update("Fetching UTXOs...");
       const utxos = await this.getUtxos(address);
       const totalUtxoAmount = utxos.reduce(
         (sum, utxo) => sum + (utxo.data.bsv21.amt || 0),
         0
       );
+
       if (totalUtxoAmount < totalAtomicTokenAmount) {
         return { error: "Insufficient MNEE balance" };
       }
 
+      // Determine fee
       const fee =
         request.find((req) => req.address === config.burnAddress) !== undefined
           ? 0
@@ -262,11 +280,12 @@ export class MNEEService {
             )?.fee;
       if (fee === undefined) return { error: "Fee ranges inadequate" };
 
+      // Build transaction
       const tx = new Transaction(1, [], [], 0);
       let tokensIn = 0;
       const signingAddresses: string[] = [];
-      let changeAddress = "";
 
+      let changeAddress = "";
       while (tokensIn < totalAtomicTokenAmount + fee) {
         const utxo = utxos.shift();
         if (!utxo) return { error: "Insufficient MNEE balance" };
@@ -276,6 +295,7 @@ export class MNEEService {
           return { error: "Failed to fetch source transaction" };
 
         signingAddresses.push(utxo.owners[0]);
+
         changeAddress = changeAddress || utxo.owners[0];
         tx.addInput({
           sourceTXID: utxo.txid,
@@ -283,30 +303,29 @@ export class MNEEService {
           sourceTransaction,
           unlockingScript: new UnlockingScript(),
         });
+
         tokensIn += utxo.data.bsv21.amt;
       }
 
       for (const req of request) {
         tx.addOutput(
-          await this.createInscription(
+          this.createInscription(
             req.address,
             this.toAtomicAmount(req.amount, config.decimals),
             config
           )
         );
       }
+
       if (fee > 0)
-        tx.addOutput(
-          await this.createInscription(config.feeAddress, fee, config)
-        );
+        tx.addOutput(this.createInscription(config.feeAddress, fee, config));
 
       const change = tokensIn - totalAtomicTokenAmount - fee;
       if (change > 0) {
-        tx.addOutput(
-          await this.createInscription(changeAddress, change, config)
-        );
+        tx.addOutput(this.createInscription(changeAddress, change, config));
       }
 
+      // Signing transaction
       const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
         if (!input.sourceTXID) throw new Error("Source TXID is undefined");
         return {
@@ -330,66 +349,72 @@ export class MNEEService {
 
       const rawtx = tx.toHex();
       const res = await this.getSignatures({ rawtx, sigRequests }, privateKey);
+
       if (!res?.sigResponses) return { error: "Failed to get signatures" };
 
+      // Apply signatures
       for (const sigResponse of res.sigResponses) {
         tx.inputs[sigResponse.inputIndex].unlockingScript = new Script()
           .writeBin(Utils.toArray(sigResponse.sig, "hex"))
           .writeBin(Utils.toArray(sigResponse.pubKey, "hex"));
       }
 
+      // Submit transaction using Axios
+      logger.update("Getting signatures...");
       const base64Tx = Utils.toBase64(tx.toBinary());
-      const response = await fetch(
+      const response = await axios.post<{ rawtx: string }>(
         `${this.mneeApi}/v1/transfer?auth_token=${this.mneeApiToken}`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rawtx: base64Tx }),
+          rawtx: base64Tx,
         }
       );
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
-      const { rawtx: responseRawtx } = await response.json();
-      if (!responseRawtx) return { error: "Failed to broadcast transaction" };
 
-      const decodedBase64AsBinary = Utils.toArray(responseRawtx, "base64");
+      if (!response.data.rawtx)
+        return { error: "Failed to broadcast transaction" };
+
+      const decodedBase64AsBinary = Utils.toArray(
+        response.data.rawtx,
+        "base64"
+      );
       const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
+
+      logger.update("Broadcasting transaction...");
       await this.broadcast(tx2);
 
       return { txid: tx2.id("hex"), rawtx: Utils.toHex(decodedBase64AsBinary) };
     } catch (error) {
       let errorMessage = "Transaction submission failed";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        if (error.message.includes("HTTP error")) {
-          // Add more specific error handling if needed based on response status
-          console.error("HTTP error details:", error);
+
+      if (axios.isAxiosError(error) && error.response) {
+        const { status, data } = error.response;
+        if (data?.message) {
+          if (status === 423) {
+            if (data.message.includes("frozen")) {
+              errorMessage =
+                "Your address is currently frozen and cannot send tokens";
+            } else if (data.message.includes("blacklisted")) {
+              errorMessage =
+                "The recipient address is blacklisted and cannot receive tokens";
+            } else {
+              errorMessage =
+                "Transaction blocked: Address is either frozen or blacklisted";
+            }
+          } else if (status === 503) {
+            if (data.message.includes("cosigner is paused")) {
+              errorMessage =
+                "Token transfers are currently paused by the administrator";
+            } else errorMessage = "Service temporarily unavailable";
+          } else {
+            errorMessage = data.message;
+          }
         }
+      } else {
+        errorMessage =
+          error instanceof Error ? error.message : "An unknown error occurred";
       }
+
       console.error("Failed to transfer tokens:", errorMessage);
       return { error: errorMessage };
     }
-  }
-
-  public async getBalance(address: string): Promise<MNEEBalance> {
-    try {
-      const config = await this.getConfig();
-      if (!config) throw new Error("Config not fetched");
-      const res = await this.getUtxos(address);
-      const balance = res.reduce((acc, utxo) => {
-        if (utxo.data.bsv21.op === "transfer") {
-          acc += utxo.data.bsv21.amt;
-        }
-        return acc;
-      }, 0);
-
-      const decimalAmount = parseFloat(
-        (balance / 10 ** (config.decimals || 0)).toFixed(config.decimals)
-      );
-      return { amount: balance, decimalAmount };
-    } catch (error) {
-      console.error("Failed to fetch balance:", error);
-      return { amount: 0, decimalAmount: 0 };
-    }
-  }
+  };
 }

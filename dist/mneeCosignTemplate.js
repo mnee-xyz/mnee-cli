@@ -1,21 +1,10 @@
-"use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const sdk_1 = require("@bsv/sdk");
+import { Hash, LockingScript, OP, TransactionSignature, UnlockingScript, Utils, } from "@bsv/sdk";
 /**
  * P2PKH (Pay To Public Key Hash) class implementing ScriptTemplate.
  *
  * This class provides methods to create Pay To Public Key Hash locking and unlocking scripts, including the unlocking of P2PKH UTXOs with the private key.
  */
-class CosignTemplate {
+export default class CosignTemplate {
     /**
      * Creates a P2PKH locking script for a given public key hash or address string
      *
@@ -26,7 +15,7 @@ class CosignTemplate {
     lock(userPKHash, approverPubKey) {
         let pkhash = [];
         if (typeof userPKHash === "string") {
-            const hash = sdk_1.Utils.fromBase58Check(userPKHash);
+            const hash = Utils.fromBase58Check(userPKHash);
             if (hash.prefix[0] !== 0x00 && hash.prefix[0] !== 0x6f)
                 throw new Error("only P2PKH is supported");
             pkhash = hash.data;
@@ -34,15 +23,15 @@ class CosignTemplate {
         else {
             pkhash = userPKHash;
         }
-        const lockingScript = new sdk_1.LockingScript();
+        const lockingScript = new LockingScript();
         lockingScript
-            .writeOpCode(sdk_1.OP.OP_DUP)
-            .writeOpCode(sdk_1.OP.OP_HASH160)
+            .writeOpCode(OP.OP_DUP)
+            .writeOpCode(OP.OP_HASH160)
             .writeBin(pkhash)
-            .writeOpCode(sdk_1.OP.OP_EQUALVERIFY)
-            .writeOpCode(sdk_1.OP.OP_CHECKSIGVERIFY)
+            .writeOpCode(OP.OP_EQUALVERIFY)
+            .writeOpCode(OP.OP_CHECKSIGVERIFY)
             .writeBin(approverPubKey.encode(true))
-            .writeOpCode(sdk_1.OP.OP_CHECKSIG);
+            .writeOpCode(OP.OP_CHECKSIG);
         return lockingScript;
     }
     /**
@@ -62,38 +51,38 @@ class CosignTemplate {
      */
     userUnlock(userPrivateKey, signOutputs = "all", anyoneCanPay = false, sourceSatoshis, lockingScript) {
         return {
-            sign: (tx, inputIndex) => __awaiter(this, void 0, void 0, function* () {
-                var _a, _b, _c;
-                let signatureScope = sdk_1.TransactionSignature.SIGHASH_FORKID;
+            sign: async (tx, inputIndex) => {
+                let signatureScope = TransactionSignature.SIGHASH_FORKID;
                 if (signOutputs === "all") {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_ALL;
+                    signatureScope |= TransactionSignature.SIGHASH_ALL;
                 }
                 if (signOutputs === "none") {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_NONE;
+                    signatureScope |= TransactionSignature.SIGHASH_NONE;
                 }
                 if (signOutputs === "single") {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_SINGLE;
+                    signatureScope |= TransactionSignature.SIGHASH_SINGLE;
                 }
                 if (anyoneCanPay) {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_ANYONECANPAY;
+                    signatureScope |= TransactionSignature.SIGHASH_ANYONECANPAY;
                 }
                 const input = tx.inputs[inputIndex];
                 const otherInputs = tx.inputs.filter((_, index) => index !== inputIndex);
                 const sourceTXID = input.sourceTXID
                     ? input.sourceTXID
-                    : (_a = input.sourceTransaction) === null || _a === void 0 ? void 0 : _a.id("hex");
+                    : input.sourceTransaction?.id("hex");
                 if (!sourceTXID) {
                     throw new Error("The input sourceTXID or sourceTransaction is required for transaction signing.");
                 }
-                sourceSatoshis || (sourceSatoshis = (_b = input.sourceTransaction) === null || _b === void 0 ? void 0 : _b.outputs[input.sourceOutputIndex].satoshis);
+                sourceSatoshis || (sourceSatoshis = input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis);
                 if (!sourceSatoshis) {
                     throw new Error("The sourceSatoshis or input sourceTransaction is required for transaction signing.");
                 }
-                lockingScript || (lockingScript = (_c = input.sourceTransaction) === null || _c === void 0 ? void 0 : _c.outputs[input.sourceOutputIndex].lockingScript);
+                lockingScript || (lockingScript = input.sourceTransaction?.outputs[input.sourceOutputIndex]
+                    .lockingScript);
                 if (!lockingScript) {
                     throw new Error("The lockingScript or input sourceTransaction is required for transaction signing.");
                 }
-                const preimage = sdk_1.TransactionSignature.format({
+                const preimage = TransactionSignature.format({
                     sourceTXID,
                     sourceOutputIndex: input.sourceOutputIndex,
                     sourceSatoshis,
@@ -106,18 +95,18 @@ class CosignTemplate {
                     lockTime: tx.lockTime,
                     scope: signatureScope,
                 });
-                const rawSignature = userPrivateKey.sign(sdk_1.Hash.sha256(preimage));
-                const sig = new sdk_1.TransactionSignature(rawSignature.r, rawSignature.s, signatureScope);
-                const unlockScript = new sdk_1.UnlockingScript();
+                const rawSignature = userPrivateKey.sign(Hash.sha256(preimage));
+                const sig = new TransactionSignature(rawSignature.r, rawSignature.s, signatureScope);
+                const unlockScript = new UnlockingScript();
                 unlockScript.writeBin(sig.toChecksigFormat());
                 unlockScript.writeBin(userPrivateKey.toPublicKey().encode(true));
                 return unlockScript;
-            }),
-            estimateLength: () => __awaiter(this, void 0, void 0, function* () {
+            },
+            estimateLength: async () => {
                 // public key (1+33) + signature (1+73) + approver signature (1+73)
                 // Note: We add 1 to each element's length because of the associated OP_PUSH
                 return 182;
-            }),
+            },
         };
     }
     /**
@@ -137,38 +126,38 @@ class CosignTemplate {
      */
     unlock(approverPrivateKey, userSigScript, signOutputs = "all", anyoneCanPay = false, sourceSatoshis, lockingScript) {
         return {
-            sign: (tx, inputIndex) => __awaiter(this, void 0, void 0, function* () {
-                var _a, _b, _c;
-                let signatureScope = sdk_1.TransactionSignature.SIGHASH_FORKID;
+            sign: async (tx, inputIndex) => {
+                let signatureScope = TransactionSignature.SIGHASH_FORKID;
                 if (signOutputs === "all") {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_ALL;
+                    signatureScope |= TransactionSignature.SIGHASH_ALL;
                 }
                 if (signOutputs === "none") {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_NONE;
+                    signatureScope |= TransactionSignature.SIGHASH_NONE;
                 }
                 if (signOutputs === "single") {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_SINGLE;
+                    signatureScope |= TransactionSignature.SIGHASH_SINGLE;
                 }
                 if (anyoneCanPay) {
-                    signatureScope |= sdk_1.TransactionSignature.SIGHASH_ANYONECANPAY;
+                    signatureScope |= TransactionSignature.SIGHASH_ANYONECANPAY;
                 }
                 const input = tx.inputs[inputIndex];
                 const otherInputs = tx.inputs.filter((_, index) => index !== inputIndex);
                 const sourceTXID = input.sourceTXID
                     ? input.sourceTXID
-                    : (_a = input.sourceTransaction) === null || _a === void 0 ? void 0 : _a.id("hex");
+                    : input.sourceTransaction?.id("hex");
                 if (!sourceTXID) {
                     throw new Error("The input sourceTXID or sourceTransaction is required for transaction signing.");
                 }
-                sourceSatoshis || (sourceSatoshis = (_b = input.sourceTransaction) === null || _b === void 0 ? void 0 : _b.outputs[input.sourceOutputIndex].satoshis);
+                sourceSatoshis || (sourceSatoshis = input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis);
                 if (!sourceSatoshis) {
                     throw new Error("The sourceSatoshis or input sourceTransaction is required for transaction signing.");
                 }
-                lockingScript || (lockingScript = (_c = input.sourceTransaction) === null || _c === void 0 ? void 0 : _c.outputs[input.sourceOutputIndex].lockingScript);
+                lockingScript || (lockingScript = input.sourceTransaction?.outputs[input.sourceOutputIndex]
+                    .lockingScript);
                 if (!lockingScript) {
                     throw new Error("The lockingScript or input sourceTransaction is required for transaction signing.");
                 }
-                const preimage = sdk_1.TransactionSignature.format({
+                const preimage = TransactionSignature.format({
                     sourceTXID,
                     sourceOutputIndex: input.sourceOutputIndex,
                     sourceSatoshis,
@@ -181,19 +170,18 @@ class CosignTemplate {
                     lockTime: tx.lockTime,
                     scope: signatureScope,
                 });
-                const rawSignature = approverPrivateKey.sign(sdk_1.Hash.sha256(preimage));
-                const sig = new sdk_1.TransactionSignature(rawSignature.r, rawSignature.s, signatureScope);
-                const unlockScript = new sdk_1.UnlockingScript();
+                const rawSignature = approverPrivateKey.sign(Hash.sha256(preimage));
+                const sig = new TransactionSignature(rawSignature.r, rawSignature.s, signatureScope);
+                const unlockScript = new UnlockingScript();
                 unlockScript.writeBin(sig.toChecksigFormat());
                 unlockScript.writeScript(userSigScript);
                 return unlockScript;
-            }),
-            estimateLength: () => __awaiter(this, void 0, void 0, function* () {
+            },
+            estimateLength: async () => {
                 // public key (1+33) + signature (1+73) + approver signature (1+73)
                 // Note: We add 1 to each element's length because of the associated OP_PUSH
                 return 182;
-            }),
+            },
         };
     }
 }
-exports.default = CosignTemplate;
