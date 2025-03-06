@@ -1,6 +1,6 @@
 {
   "name": "mnee-cli",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "MNEE CLI tool",
   "main": "dist/cli.js",
   "type": "module",
@@ -38,7 +38,8 @@
     "commander": "^13.1.0",
     "inquirer": "^12.4.2",
     "js-1sat-ord": "^0.1.80",
-    "keytar": "^7.9.0"
+    "keytar": "^7.9.0",
+    "mnee": "^1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

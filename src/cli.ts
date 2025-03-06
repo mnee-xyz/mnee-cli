@@ -6,11 +6,11 @@ import keytar from "keytar";
 import crypto from "crypto";
 import { PrivateKey } from "@bsv/sdk";
 import { decryptPrivateKey, encryptPrivateKey } from "./utils/crytpo.js";
-import { MNEEService } from "./Mnee.service.js";
-import { SendMNEE } from "./mnee.types.js";
 import { singleLineLogger } from "./utils/helper.js";
+import mnee from "mnee";
+import { SendMNEE } from "mnee/dist/mnee.types.js";
 
-const mneeService = new MNEEService();
+const mneeService = new mnee();
 const program = new Command();
 const SERVICE_NAME = "mnee-cli";
 
@@ -99,7 +99,7 @@ program
       return;
     }
     singleLineLogger.start("Fetching balance...");
-    const { decimalAmount } = await mneeService.getBalance(address);
+    const { decimalAmount } = await mneeService.balance(address);
     singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
   });
 
@@ -155,10 +155,8 @@ program
 
       singleLineLogger.start("Transferring MNEE...");
       const { txid, error } = await mneeService.transfer(
-        address,
         request,
-        privateKey,
-        singleLineLogger
+        privateKey.toWif()
       );
       if (!txid) {
         singleLineLogger.done(
