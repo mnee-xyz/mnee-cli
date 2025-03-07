@@ -4,10 +4,10 @@ import inquirer from "inquirer";
 import keytar from "keytar";
 import crypto from "crypto";
 import { PrivateKey } from "@bsv/sdk";
-import { decryptPrivateKey, encryptPrivateKey } from "./utils/crytpo.js";
+import { decryptPrivateKey, encryptPrivateKey } from "./utils/crypto.js";
 import { singleLineLogger } from "./utils/helper.js";
-import mnee from "mnee";
-const mneeService = new mnee();
+import Mnee from "mnee";
+const mnee = new Mnee();
 const program = new Command();
 const SERVICE_NAME = "mnee-cli";
 const safePrompt = async (questions) => {
@@ -81,7 +81,7 @@ program
         return;
     }
     singleLineLogger.start("Fetching balance...");
-    const { decimalAmount } = await mneeService.balance(address);
+    const { decimalAmount } = await mnee.balance(address);
     singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
 });
 program
@@ -129,7 +129,7 @@ program
             { address: toAddress, amount: parseFloat(amount) },
         ];
         singleLineLogger.start("Transferring MNEE...");
-        const { txid, error } = await mneeService.transfer(request, privateKey.toWif());
+        const { txid, error } = await mnee.transfer(request, privateKey.toWif());
         if (!txid) {
             singleLineLogger.done(`❌ Transfer failed. ${error ? error : "Please try again."}`);
             return;
