@@ -505,10 +505,8 @@ program
   .description("Import an existing wallet using a WIF private key")
   .action(async () => {
     try {
-      // Get existing wallets to check for duplicate names
       const existingWallets = await getAllWallets();
       
-      // Ask for environment type
       const { environment } = await safePrompt([
         {
           type: "list",
@@ -522,7 +520,6 @@ program
         }
       ]);
       
-      // Ask for WIF key
       const { wifKey } = await safePrompt([
         {
           type: "password",
@@ -532,7 +529,6 @@ program
         }
       ]);
       
-      // Validate WIF key
       let privateKey: PrivateKey;
       try {
         privateKey = PrivateKey.fromWif(wifKey);
@@ -541,10 +537,8 @@ program
         return;
       }
       
-      // Get wallet address from private key
       const address = privateKey.toAddress();
       
-      // Ask for wallet name
       const { walletName } = await safePrompt([
         {
           type: "input",
@@ -552,13 +546,11 @@ program
           message: `Enter a name for your ${environment} wallet:`,
           default: `${environment}-wallet-${Date.now()}`,
           validate: (input: string) => {
-            // First validate the format
             const validation = validateWalletName(input);
             if (!validation.isValid) {
               return validation.error || "Invalid wallet name";
             }
             
-            // Then check for duplicates
             if (existingWallets.some(w => w.name === input)) {
               return `A wallet with name "${input}" already exists`;
             }
@@ -568,7 +560,6 @@ program
         },
       ]);
       
-      // Ask for password to encrypt the private key
       const { password, confirmPassword } = await safePrompt([
         {
           type: "password",
@@ -589,10 +580,8 @@ program
         return;
       }
       
-      // Encrypt the private key
       const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
       
-      // Create new wallet info
       const newWallet: WalletInfo = {
         address,
         environment,
@@ -600,14 +589,11 @@ program
         isActive: existingWallets.length === 0,
       };
       
-      // Add new wallet to list
       existingWallets.push(newWallet);
       await saveWallets(existingWallets);
       
-      // Save encrypted private key
       await keytar.setPassword(SERVICE_NAME, `privateKey_${address}`, encryptedKey);
       
-      // Set as active wallet if it's the first one
       if (newWallet.isActive) {
         await setActiveWallet(newWallet);
       }
