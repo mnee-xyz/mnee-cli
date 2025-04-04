@@ -1,44 +1,13 @@
 #!/usr/bin/env node
-/**
- * MNEE CLI - Command Line Interface for interacting with MNEE tokens
- *
- * This implementation uses the Mnee package with the new configuration:
- * new Mnee({ environment: string, apiKey?: string })
- *
- * This allows for creating and managing both production and sandbox wallets.
- */
 import { Command } from "commander";
 import inquirer from "inquirer";
 import keytar from "keytar";
 import crypto from "crypto";
 import { PrivateKey } from "@bsv/sdk";
 import { decryptPrivateKey, encryptPrivateKey } from "./utils/crypto.js";
-import { singleLineLogger } from "./utils/helper.js";
+import { ACTIVE_WALLET_KEY, getActiveWallet, getAllWallets, saveWallets, SERVICE_NAME, setActiveWallet, singleLineLogger } from "./utils/helper.js";
 import Mnee from "mnee";
-const SERVICE_NAME = "mnee-cli";
-const WALLETS_KEY = "wallets";
-const ACTIVE_WALLET_KEY = "activeWallet";
-// Helper function to get all wallets
-const getAllWallets = async () => {
-    const walletsJson = await keytar.getPassword(SERVICE_NAME, WALLETS_KEY);
-    return walletsJson ? JSON.parse(walletsJson) : [];
-};
-// Helper function to save all wallets
-const saveWallets = async (wallets) => {
-    await keytar.setPassword(SERVICE_NAME, WALLETS_KEY, JSON.stringify(wallets));
-};
-// Helper function to get active wallet
-const getActiveWallet = async () => {
-    const activeWalletJson = await keytar.getPassword(SERVICE_NAME, ACTIVE_WALLET_KEY);
-    return activeWalletJson ? JSON.parse(activeWalletJson) : null;
-};
-// Helper function to set active wallet
-const setActiveWallet = async (wallet) => {
-    await keytar.setPassword(SERVICE_NAME, ACTIVE_WALLET_KEY, JSON.stringify(wallet));
-};
-// Helper function to get Mnee instance with environment
 const getMneeInstance = (environment, apiKey) => {
-    // Using the new Mnee constructor with environment and apiKey
     return new Mnee({ environment, apiKey });
 };
 const safePrompt = async (questions) => {
@@ -60,9 +29,7 @@ program
     .description("Generate a new wallet and store keys securely")
     .action(async () => {
     try {
-        // Get existing wallets to check for duplicate names
         const existingWallets = await getAllWallets();
-        // Ask for environment type
         const { environment } = await safePrompt([
             {
                 type: "list",
@@ -82,12 +49,10 @@ program
                 message: `Enter a name for your ${environment} wallet:`,
                 default: `${environment}-wallet-${Date.now()}`,
                 validate: (input) => {
-                    // First validate the format
                     const validation = validateWalletName(input);
                     if (!validation.isValid) {
                         return validation.error || "Invalid wallet name";
                     }
-                    // Then check for duplicates
                     if (existingWallets.some(w => w.name === input)) {
                         return `A wallet with name "${input}" already exists`;
                     }
@@ -117,22 +82,16 @@ program
             return;
         }
         const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
-        // Get existing wallets
         const wallets = await getAllWallets();
-        // Create new wallet info
         const newWallet = {
             address,
             environment,
             name: walletName,
-            isActive: wallets.length === 0, // Make active if first wallet
+            isActive: wallets.length === 0,
         };
-        // Add new wallet to list
         wallets.push(newWallet);
-        // Save wallets list
         await saveWallets(wallets);
-        // Save encrypted private key
         await keytar.setPassword(SERVICE_NAME, `privateKey_${address}`, encryptedKey);
-        // Set as active wallet if it's the first one
         if (newWallet.isActive) {
             await setActiveWallet(newWallet);
         }
@@ -299,7 +258,6 @@ program
             console.error("❌ No wallets found.");
             return;
         }
-        // If no wallet name provided, use active wallet
         if (!walletName && activeWallet) {
             walletName = activeWallet.name;
         }
@@ -324,13 +282,11 @@ program
             console.log("🚫 Operation cancelled.");
             return;
         }
-        // Get the encrypted private key
         const encryptedKey = await keytar.getPassword(SERVICE_NAME, `privateKey_${wallet.address}`);
         if (!encryptedKey) {
             console.error("❌ Private key not found for this wallet.");
             return;
         }
-        // Prompt for password
         const { password } = await safePrompt([
             {
                 type: "password",
@@ -339,7 +295,6 @@ program
                 mask: "*",
             },
         ]);
-        // Verify password by attempting to decrypt the private key
         let decryptedKey = null;
         try {
             decryptedKey = decryptPrivateKey(encryptedKey, password);
@@ -348,30 +303,23 @@ program
             console.error("❌ Incorrect password! Deletion cancelled.");
             return;
         }
-        // Double-check that decryption was successful
         if (!decryptedKey) {
             console.error("❌ Password verification failed. Deletion cancelled.");
             return;
         }
-        // Remove wallet from list
         const updatedWallets = wallets.filter(w => w.name !== walletName);
-        // If deleting active wallet, set a new active wallet if available
         if (wallet.isActive) {
             if (updatedWallets.length > 0) {
-                // Set the first remaining wallet as active
                 updatedWallets[0].isActive = true;
                 await setActiveWallet(updatedWallets[0]);
                 console.log(`\n✅ Active wallet switched to: ${updatedWallets[0].name}`);
             }
             else {
-                // No wallets left, clear active wallet
                 await keytar.deletePassword(SERVICE_NAME, ACTIVE_WALLET_KEY);
                 console.log("\nℹ️ No active wallet set. Create a new wallet with `mnee create`.");
             }
         }
-        // Save updated wallets
         await saveWallets(updatedWallets);
-        // Delete private key
         await keytar.deletePassword(SERVICE_NAME, `privateKey_${wallet.address}`);
         console.log(`\n🗑️ Wallet "${walletName}" deleted successfully!`);
     }
@@ -420,13 +368,10 @@ program
             console.log("Run `mnee list` to see your available wallets.");
             return;
         }
-        // Update active status for all wallets
         wallets.forEach(w => {
             w.isActive = w.name === walletName;
         });
-        // Save updated wallets
         await saveWallets(wallets);
-        // Set active wallet
         await setActiveWallet(wallet);
         console.log(`\n✅ Switched to wallet: ${wallet.name}`);
         console.log(`Environment: ${wallet.environment}`);
@@ -443,7 +388,6 @@ program
     .argument("<newName>", "New name for the wallet")
     .action(async (oldName, newName) => {
     try {
-        // Validate the new wallet name
         const validation = validateWalletName(newName);
         if (!validation.isValid) {
             console.error(`❌ ${validation.error}`);
@@ -460,16 +404,12 @@ program
             console.log("Run `mnee list` to see your available wallets.");
             return;
         }
-        // Check if new name already exists
         if (wallets.some(w => w.name === newName)) {
             console.error(`❌ A wallet with name "${newName}" already exists.`);
             return;
         }
-        // Update wallet name
         wallet.name = newName;
-        // Save updated wallets
         await saveWallets(wallets);
-        // Update active wallet if needed
         const activeWallet = await getActiveWallet();
         if (activeWallet && activeWallet.name === oldName) {
             await setActiveWallet(wallet);
@@ -483,32 +423,138 @@ program
         console.error("\n❌ Error renaming wallet:", error);
     }
 });
-// Helper function to migrate old wallet format to new format
+program
+    .command("import")
+    .description("Import an existing wallet using a WIF private key")
+    .action(async () => {
+    try {
+        // Get existing wallets to check for duplicate names
+        const existingWallets = await getAllWallets();
+        // Ask for environment type
+        const { environment } = await safePrompt([
+            {
+                type: "list",
+                name: "environment",
+                message: "Select wallet environment:",
+                choices: [
+                    { name: "Production", value: "production" },
+                    { name: "Sandbox", value: "sandbox" }
+                ],
+                default: "production"
+            }
+        ]);
+        // Ask for WIF key
+        const { wifKey } = await safePrompt([
+            {
+                type: "password",
+                name: "wifKey",
+                message: "Enter your WIF private key:",
+                mask: "*",
+            }
+        ]);
+        // Validate WIF key
+        let privateKey;
+        try {
+            privateKey = PrivateKey.fromWif(wifKey);
+        }
+        catch (error) {
+            console.error("❌ Invalid WIF key. Please check and try again.");
+            return;
+        }
+        // Get wallet address from private key
+        const address = privateKey.toAddress();
+        // Ask for wallet name
+        const { walletName } = await safePrompt([
+            {
+                type: "input",
+                name: "walletName",
+                message: `Enter a name for your ${environment} wallet:`,
+                default: `${environment}-wallet-${Date.now()}`,
+                validate: (input) => {
+                    // First validate the format
+                    const validation = validateWalletName(input);
+                    if (!validation.isValid) {
+                        return validation.error || "Invalid wallet name";
+                    }
+                    // Then check for duplicates
+                    if (existingWallets.some(w => w.name === input)) {
+                        return `A wallet with name "${input}" already exists`;
+                    }
+                    return true;
+                }
+            },
+        ]);
+        // Ask for password to encrypt the private key
+        const { password, confirmPassword } = await safePrompt([
+            {
+                type: "password",
+                name: "password",
+                message: "Set a password to encrypt your wallet:",
+                mask: "*",
+            },
+            {
+                type: "password",
+                name: "confirmPassword",
+                message: "Confirm your password:",
+                mask: "*",
+            },
+        ]);
+        if (password !== confirmPassword) {
+            console.error("❌ Passwords do not match. Try again.");
+            return;
+        }
+        // Encrypt the private key
+        const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
+        // Create new wallet info
+        const newWallet = {
+            address,
+            environment,
+            name: walletName,
+            isActive: existingWallets.length === 0,
+        };
+        // Add new wallet to list
+        existingWallets.push(newWallet);
+        await saveWallets(existingWallets);
+        // Save encrypted private key
+        await keytar.setPassword(SERVICE_NAME, `privateKey_${address}`, encryptedKey);
+        // Set as active wallet if it's the first one
+        if (newWallet.isActive) {
+            await setActiveWallet(newWallet);
+        }
+        console.log("\n✅ Wallet imported successfully!");
+        console.log(`\nName: ${walletName}`);
+        console.log(`Environment: ${environment}`);
+        console.log(`Address: ${address}\n`);
+        if (newWallet.isActive) {
+            console.log("This wallet is now your active wallet.");
+        }
+        else {
+            console.log("To use this wallet, run: mnee use <wallet-name>");
+        }
+    }
+    catch (error) {
+        console.error("\n❌ Error importing wallet:", error);
+    }
+});
 const migrateOldWallets = async () => {
     try {
-        // Check if we already have wallets in the new format
         const existingWallets = await getAllWallets();
         if (existingWallets.length > 0) {
-            return; // Already migrated
+            return;
         }
-        // Check for old wallet format
         const oldAddress = await keytar.getPassword(SERVICE_NAME, "walletAddress");
         const oldPrivateKey = await keytar.getPassword(SERVICE_NAME, "privateKey");
         if (oldAddress && oldPrivateKey) {
             console.log("\n🔄 Migrating existing wallet to new format...");
-            // Create a wallet info object
             const wallet = {
                 address: oldAddress,
-                environment: 'production', // Default to production for old wallets
+                environment: 'production',
                 name: 'legacy-wallet',
                 isActive: true,
             };
-            // Save the wallet
             await saveWallets([wallet]);
             await setActiveWallet(wallet);
-            // Rename the private key to match new format
             await keytar.setPassword(SERVICE_NAME, `privateKey_${oldAddress}`, oldPrivateKey);
-            // Clean up old keys
             await keytar.deletePassword(SERVICE_NAME, "walletAddress");
             await keytar.deletePassword(SERVICE_NAME, "privateKey");
             console.log("✅ Migration complete!");
@@ -520,25 +566,19 @@ const migrateOldWallets = async () => {
         console.error("\n❌ Error migrating wallet:", error);
     }
 };
-// Run migration for existing wallets
 migrateOldWallets().catch(error => {
     console.error("\n❌ Error during wallet migration:", error);
 });
-// Helper function to validate wallet name
 const validateWalletName = (name) => {
-    // Check for empty name
     if (!name || name.trim() === '') {
         return { isValid: false, error: "Wallet name cannot be empty" };
     }
-    // Check for spaces
     if (name.includes(' ')) {
         return { isValid: false, error: "Wallet name cannot contain spaces" };
     }
-    // Check for special characters (only allow alphanumeric, hyphens, and underscores)
     if (!/^[a-zA-Z0-9-_]+$/.test(name)) {
         return { isValid: false, error: "Wallet name can only contain letters, numbers, hyphens, and underscores" };
     }
-    // Check for length (between 1 and 50 characters)
     if (name.length < 1 || name.length > 50) {
         return { isValid: false, error: "Wallet name must be between 1 and 50 characters" };
     }
@@ -557,6 +597,7 @@ if (!process.argv.slice(2).length) {
     console.log("  export                  Export your private key (WIF format)");
     console.log("  delete <walletName>     Delete a wallet");
     console.log("  rename <oldName> <newName>  Rename a wallet");
+    console.log("  import                  Import an existing wallet using a WIF private key");
     console.log("\nFor more information on a command, run: mnee <command> --help\n");
 }
 process.on("SIGINT", () => {

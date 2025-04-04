@@ -500,6 +500,133 @@ program
     }
   });
 
+program
+  .command("import")
+  .description("Import an existing wallet using a WIF private key")
+  .action(async () => {
+    try {
+      // Get existing wallets to check for duplicate names
+      const existingWallets = await getAllWallets();
+      
+      // Ask for environment type
+      const { environment } = await safePrompt([
+        {
+          type: "list",
+          name: "environment",
+          message: "Select wallet environment:",
+          choices: [
+            { name: "Production", value: "production" },
+            { name: "Sandbox", value: "sandbox" }
+          ],
+          default: "production"
+        }
+      ]);
+      
+      // Ask for WIF key
+      const { wifKey } = await safePrompt([
+        {
+          type: "password",
+          name: "wifKey",
+          message: "Enter your WIF private key:",
+          mask: "*",
+        }
+      ]);
+      
+      // Validate WIF key
+      let privateKey: PrivateKey;
+      try {
+        privateKey = PrivateKey.fromWif(wifKey);
+      } catch (error) {
+        console.error("❌ Invalid WIF key. Please check and try again.");
+        return;
+      }
+      
+      // Get wallet address from private key
+      const address = privateKey.toAddress();
+      
+      // Ask for wallet name
+      const { walletName } = await safePrompt([
+        {
+          type: "input",
+          name: "walletName",
+          message: `Enter a name for your ${environment} wallet:`,
+          default: `${environment}-wallet-${Date.now()}`,
+          validate: (input: string) => {
+            // First validate the format
+            const validation = validateWalletName(input);
+            if (!validation.isValid) {
+              return validation.error || "Invalid wallet name";
+            }
+            
+            // Then check for duplicates
+            if (existingWallets.some(w => w.name === input)) {
+              return `A wallet with name "${input}" already exists`;
+            }
+            
+            return true;
+          }
+        },
+      ]);
+      
+      // Ask for password to encrypt the private key
+      const { password, confirmPassword } = await safePrompt([
+        {
+          type: "password",
+          name: "password",
+          message: "Set a password to encrypt your wallet:",
+          mask: "*",
+        },
+        {
+          type: "password",
+          name: "confirmPassword",
+          message: "Confirm your password:",
+          mask: "*",
+        },
+      ]);
+      
+      if (password !== confirmPassword) {
+        console.error("❌ Passwords do not match. Try again.");
+        return;
+      }
+      
+      // Encrypt the private key
+      const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
+      
+      // Create new wallet info
+      const newWallet: WalletInfo = {
+        address,
+        environment,
+        name: walletName,
+        isActive: existingWallets.length === 0,
+      };
+      
+      // Add new wallet to list
+      existingWallets.push(newWallet);
+      await saveWallets(existingWallets);
+      
+      // Save encrypted private key
+      await keytar.setPassword(SERVICE_NAME, `privateKey_${address}`, encryptedKey);
+      
+      // Set as active wallet if it's the first one
+      if (newWallet.isActive) {
+        await setActiveWallet(newWallet);
+      }
+      
+      console.log("\n✅ Wallet imported successfully!");
+      console.log(`\nName: ${walletName}`);
+      console.log(`Environment: ${environment}`);
+      console.log(`Address: ${address}\n`);
+      
+      if (newWallet.isActive) {
+        console.log("This wallet is now your active wallet.");
+      } else {
+        console.log("To use this wallet, run: mnee use <wallet-name>");
+      }
+    } catch (error) {
+      console.error("\n❌ Error importing wallet:", error);
+    }
+  });
+
 const migrateOldWallets = async (): Promise<void> => {
   try {
     const existingWallets = await getAllWallets();
@@ -574,6 +701,7 @@ if (!process.argv.slice(2).length) {
   console.log("  export                  Export your private key (WIF format)");
   console.log("  delete <walletName>     Delete a wallet");
   console.log("  rename <oldName> <newName>  Rename a wallet");
+  console.log("  import                  Import an existing wallet using a WIF private key");
   console.log("\nFor more information on a command, run: mnee <command> --help\n");
 }
 
