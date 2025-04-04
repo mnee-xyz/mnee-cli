@@ -1,3 +1,5 @@
+import keytar from "keytar";
+
 export interface SingleLineLogger {
   start: (message: string) => void;
   update: (message: string) => void;
@@ -37,3 +39,34 @@ export const singleLineLogger: SingleLineLogger = (() => {
     },
   };
 })();
+
+
+export type WalletEnvironment = 'production' | 'sandbox';
+export type WalletInfo = {
+  address: string;
+  environment: WalletEnvironment;
+  name: string;
+  isActive: boolean;
+};
+
+export const SERVICE_NAME = "mnee-cli";
+export const WALLETS_KEY = "wallets";
+export const ACTIVE_WALLET_KEY = "activeWallet";
+
+export const getAllWallets = async (): Promise<WalletInfo[]> => {
+  const walletsJson = await keytar.getPassword(SERVICE_NAME, WALLETS_KEY);
+  return walletsJson ? JSON.parse(walletsJson) : [];
+};
+
+export const saveWallets = async (wallets: WalletInfo[]): Promise<void> => {
+  await keytar.setPassword(SERVICE_NAME, WALLETS_KEY, JSON.stringify(wallets));
+};
+
+export const getActiveWallet = async (): Promise<WalletInfo | null> => {
+  const activeWalletJson = await keytar.getPassword(SERVICE_NAME, ACTIVE_WALLET_KEY);
+  return activeWalletJson ? JSON.parse(activeWalletJson) : null;
+};
+
+export const setActiveWallet = async (wallet: WalletInfo): Promise<void> => {
+  await keytar.setPassword(SERVICE_NAME, ACTIVE_WALLET_KEY, JSON.stringify(wallet));
+};
