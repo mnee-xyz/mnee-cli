@@ -224,19 +224,16 @@ program
     const maxAttempts = 20; // Safety limit to prevent infinite loops
 
     if (options.fresh) {
-      console.log('Fresh mode: Clearing cache and fetching from the beginning');
+      console.log('Fresh mode: Clearing cache and fetching from the beginning...');
       clearTxHistoryCache(activeWallet);
     } else {
       const cachedData = readTxHistoryCache(activeWallet);
-      console.log('cachedData', cachedData);
       if (cachedData) {
-        console.log(`Using cached history from ${new Date(cachedData.lastUpdated).toLocaleString()}`);
         history = cachedData.history;
         nextScore = cachedData.nextScore;
 
         // If nextScore is 0, we have all history
         if (nextScore === 0) {
-          console.log('Using complete cached history');
           console.log(JSON.stringify(history, null, 2));
           singleLineLogger.done(`\nHistory fetched successfully from cache!\n`);
           return;
@@ -245,15 +242,11 @@ program
     }
 
     while (hasMore && attempts < maxAttempts) {
-      console.log('Fetching history from score', nextScore);
       const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(
         activeWallet.address,
         nextScore,
         10,
       );
-
-      console.log('newNextScore', newNextScore);
-      console.log('nextScore', nextScore);
 
       if (newNextScore === nextScore && newNextScore !== undefined) break;
 
