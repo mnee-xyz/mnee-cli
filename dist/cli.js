@@ -21,6 +21,19 @@ const safePrompt = async (questions) => {
     }
 };
 const program = new Command();
+if (!process.argv.slice(2).length) {
+    console.log(` __       __  __    __  ________  ________         ______   __        ______ 
+/  \\     /  |/  \\  /  |/        |/        |       /      \\ /  |      /      |
+$$  \\   /$$ |$$  \\ $$ |$$$$$$$$/ $$$$$$$$/       /$$$$$$  |$$ |      $$$$$$/ 
+$$$  \\ /$$$ |$$$  \\$$ |$$ |__    $$ |__          $$ |  $$/ $$ |        $$ |  
+$$$$  /$$$$ |$$$$  $$ |$$    |   $$    |         $$ |      $$ |        $$ |  
+$$ $$ $$/$$ |$$ $$ $$ |$$$$$/    $$$$$/          $$ |   __ $$ |        $$ |  
+$$ |$$$/ $$ |$$ |$$$$ |$$ |_____ $$ |_____       $$ \\__/  |$$ |_____  _$$ |_ 
+$$ | $/  $$ |$$ | $$$ |$$       |$$       |      $$    $$/ $$       |/ $$   |
+$$/      $$/ $$/   $$/ $$$$$$$$/ $$$$$$$$/        $$$$$$/  $$$$$$$$/ $$$$$$/
+
+`);
+}
 program.name('mnee').description('CLI for interacting with MNEE tokens').version('1.0.0');
 // Add error handling for the main program
 program.exitOverride((err) => {
@@ -699,21 +712,6 @@ const validateWalletName = (name) => {
 };
 await migrateOldWallets();
 program.parse(process.argv);
-if (!process.argv.slice(2).length) {
-    console.log('\nMNEE CLI - Manage your MNEE tokens\n');
-    console.log('Commands:');
-    console.log('  create                  Create a new wallet');
-    console.log('  list                    List all your wallets and optionally switch to a different wallet');
-    console.log('  address                 Show your active wallet address');
-    console.log('  balance                 Check your wallet balance');
-    console.log('  history [options (-f, --fresh)]       View your transaction history');
-    console.log('  transfer                Transfer MNEE to another address');
-    console.log('  export                  Export your private key (WIF format)');
-    console.log('  delete <walletName>     Delete a wallet');
-    console.log('  rename <oldName> <newName>  Rename a wallet');
-    console.log('  import                  Import an existing wallet using a WIF private key');
-    console.log('\nFor more information on a command, run: mnee <command> --help\n');
-}
 process.on('SIGINT', () => {
     console.log('\n👋 Exiting program gracefully...');
     process.exit(0);
