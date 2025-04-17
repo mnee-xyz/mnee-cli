@@ -7,6 +7,9 @@ MNEE CLI is a command-line interface tool designed for interacting with MNEE USD
 - Self custody wallet
 - Securely store keys
 - User friendly
+- Support for multiple wallets
+- Production and sandbox environments
+- Transaction history tracking
 
 ## Installation
 
@@ -30,8 +33,14 @@ mnee
 - `mnee address`: Get your wallet address
 - `mnee balance`: Check your MNEE balance
 - `mnee transfer`: Transfer MNEE to another address
-- `mnee export`: Decrypt and retrieve your private key
-- `mnee delete`: Delete your wallet and all stored keys
+- `mnee export`: Decrypt and retrieve your private key in WIF format
+- `mnee delete <walletName>`: Delete a wallet
+- `mnee list`: List all your wallets and optionally switch to a different wallet
+- `mnee rename <oldName> <newName>`: Rename a wallet
+- `mnee import`: Import an existing wallet using a WIF private key
+- `mnee history`: View transaction history
+  - `-u, --unconfirmed`: Show unconfirmed transactions
+  - `-f, --fresh`: Clear cache and fetch fresh history from the beginning
 
 ## Contributing
 
