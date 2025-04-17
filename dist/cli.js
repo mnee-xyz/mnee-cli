@@ -22,6 +22,13 @@ const safePrompt = async (questions) => {
 };
 const program = new Command();
 program.name('mnee').description('CLI for interacting with MNEE tokens').version('1.0.0');
+// Add error handling for the main program
+program.exitOverride((err) => {
+    if (err.code === 'commander.help') {
+        process.exit(0);
+    }
+    process.exit(err.exitCode);
+});
 program
     .command('create')
     .description('Generate a new wallet and store keys securely')
@@ -193,7 +200,7 @@ program
         console.log(JSON.stringify(unconfirmedHistory, null, 2));
     }
     else {
-        // console.log(JSON.stringify(history, null, 2));
+        console.log(JSON.stringify(history, null, 2));
     }
     singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
 });
@@ -390,7 +397,7 @@ program
 });
 program
     .command('list')
-    .description('List all your wallets')
+    .description('List all your wallets and optionally switch to a different wallet')
     .action(async () => {
     try {
         const wallets = await getAllWallets();
@@ -403,43 +410,50 @@ program
         console.log('-------------');
         wallets.forEach((wallet, index) => {
             const activeIndicator = wallet.isActive ? ' (Active) ✅' : '';
+            const truncatedAddress = `${wallet.address.slice(0, 8)}...${wallet.address.slice(-8)}`;
             console.log(`${index + 1}. ${wallet.name}${activeIndicator}`);
             console.log(`   Environment: ${wallet.environment}`);
-            console.log(`   Address: ${wallet.address}`);
+            console.log(`   Address: ${truncatedAddress}`);
             console.log('');
         });
         if (activeWallet) {
             console.log(`Current active wallet: ${activeWallet.name} (${activeWallet.environment})`);
         }
+        const { wantToSwitch } = await safePrompt([
+            {
+                type: 'confirm',
+                name: 'wantToSwitch',
+                message: 'Would you like to switch to a different wallet?',
+                default: false,
+            },
+        ]);
+        if (wantToSwitch) {
+            const { selectedWallet } = await safePrompt([
+                {
+                    type: 'list',
+                    name: 'selectedWallet',
+                    message: 'Select a wallet to switch to:',
+                    choices: wallets.map((wallet) => ({
+                        name: `${wallet.name} | ${wallet.environment} | ${wallet.address.slice(0, 5)}...${wallet.address.slice(-4)}`,
+                        value: wallet.name,
+                    })),
+                },
+            ]);
+            const wallet = wallets.find((w) => w.name === selectedWallet);
+            if (wallet) {
+                wallets.forEach((w) => {
+                    w.isActive = w.name === selectedWallet;
+                });
+                await saveWallets(wallets);
+                await setActiveWallet(wallet);
+                console.log(`\n✅ Switched to wallet: ${wallet.name}`);
+                console.log(`Environment: ${wallet.environment}`);
+                console.log(`Address: ${wallet.address}`);
+            }
+        }
     }
     catch (error) {
         console.error('\n❌ Error listing wallets:', error);
-    }
-});
-program
-    .command('use')
-    .description('Switch to a different wallet')
-    .argument('<walletName>', 'Name of the wallet to use')
-    .action(async (walletName) => {
-    try {
-        const wallets = await getAllWallets();
-        const wallet = wallets.find((w) => w.name === walletName);
-        if (!wallet) {
-            console.error(`\n❌ Wallet "${walletName}" not found.`);
-            console.log('Run `mnee list` to see your available wallets.');
-            return;
-        }
-        wallets.forEach((w) => {
-            w.isActive = w.name === walletName;
-        });
-        await saveWallets(wallets);
-        await setActiveWallet(wallet);
-        console.log(`\n✅ Switched to wallet: ${wallet.name}`);
-        console.log(`Environment: ${wallet.environment}`);
-        console.log(`Address: ${wallet.address}`);
-    }
-    catch (error) {
-        console.error('\n❌ Error switching wallet:', error);
     }
 });
 program
@@ -567,24 +581,21 @@ program
             address,
             environment,
             name: walletName,
-            isActive: existingWallets.length === 0,
+            isActive: true,
         };
+        // Deactivate all other wallets
+        existingWallets.forEach((wallet) => {
+            wallet.isActive = false;
+        });
         existingWallets.push(newWallet);
         await saveWallets(existingWallets);
         await setPrivateKey(address, encryptedKey);
-        if (newWallet.isActive) {
-            await setActiveWallet(newWallet);
-        }
+        await setActiveWallet(newWallet);
         console.log('\n✅ Wallet imported successfully!');
         console.log(`\nName: ${walletName}`);
         console.log(`Environment: ${environment}`);
         console.log(`Address: ${address}\n`);
-        if (newWallet.isActive) {
-            console.log('This wallet is now your active wallet.');
-        }
-        else {
-            console.log(`To use this wallet, run: mnee use ${walletName}`);
-        }
+        console.log('This wallet is now your active wallet.');
     }
     catch (error) {
         console.error('\n❌ Error importing wallet:', error);
@@ -692,8 +703,7 @@ if (!process.argv.slice(2).length) {
     console.log('\nMNEE CLI - Manage your MNEE tokens\n');
     console.log('Commands:');
     console.log('  create                  Create a new wallet');
-    console.log('  list                    List all your wallets');
-    console.log('  use <walletName>        Switch to a different wallet');
+    console.log('  list                    List all your wallets and optionally switch to a different wallet');
     console.log('  address                 Show your active wallet address');
     console.log('  balance                 Check your wallet balance');
     console.log('  history [options (-f, --fresh)]       View your transaction history');
