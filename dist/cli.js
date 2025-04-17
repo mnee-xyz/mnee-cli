@@ -190,7 +190,7 @@ program
         }
     }
     while (hasMore && attempts < maxAttempts) {
-        const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 10);
+        const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100);
         if (newNextScore === nextScore && newNextScore !== undefined)
             break;
         history.push(...newHistory);
