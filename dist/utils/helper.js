@@ -1,8 +1,8 @@
 export const singleLineLogger = (() => {
     let spinnerInterval = null;
-    const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let frameIndex = 0;
-    let currentMessage = ""; // Store the latest message
+    let currentMessage = ''; // Store the latest message
     const render = () => {
         process.stdout.clearLine(0);
         process.stdout.cursorTo(0);

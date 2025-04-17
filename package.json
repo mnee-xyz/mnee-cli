@@ -1,6 +1,6 @@
 {
   "name": "mnee-cli",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "description": "MNEE CLI tool",
   "main": "dist/cli.js",
   "type": "module",
@@ -9,7 +9,8 @@
     "build": "npm run clean && tsc && npm pack",
     "start": "node dist/cli.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "dev-reset": "npm unlink mnee-cli && npm uninstall -g mnee-cli && npm run build && npm link"
   },
   "bin": {
     "mnee": "./dist/cli.js"
@@ -40,9 +41,10 @@
     "inquirer": "^12.4.2",
     "js-1sat-ord": "^0.1.80",
     "keytar": "^7.9.0",
-    "mnee": "^1.3.5"
+    "mnee": "^2.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22.14.0",
     "typescript": "^5.3.3"
   }
 }

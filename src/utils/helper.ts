@@ -6,9 +6,9 @@ export interface SingleLineLogger {
 
 export const singleLineLogger: SingleLineLogger = (() => {
   let spinnerInterval: NodeJS.Timeout | null = null;
-  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let frameIndex = 0;
-  let currentMessage = ""; // Store the latest message
+  let currentMessage = ''; // Store the latest message
 
   const render = () => {
     process.stdout.clearLine(0);
