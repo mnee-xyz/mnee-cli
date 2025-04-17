@@ -245,7 +245,7 @@ program
       const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(
         activeWallet.address,
         nextScore,
-        10,
+        100,
       );
 
       if (newNextScore === nextScore && newNextScore !== undefined) break;
