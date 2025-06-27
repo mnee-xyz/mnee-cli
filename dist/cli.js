@@ -9,6 +9,7 @@ import { getVersion, singleLineLogger } from './utils/helper.js';
 import Mnee from 'mnee';
 import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
+const apiUrl = 'http://localhost:3000';
 const getMneeInstance = (environment, apiKey) => {
     return new Mnee({ environment, apiKey });
 };
@@ -615,19 +616,35 @@ program
     .option('-e, --env <environment>', 'Set default environment (sandbox/production)', 'sandbox')
     .action(async (options) => {
     try {
-        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
+        // Check if already logged in
+        const config = await loadConfig();
+        if (config.token) {
+            try {
+                // Validate the token is still valid
+                const profile = await getProfile(apiUrl, config.token);
+                console.log(`\n✅ Already logged in as ${profile.email}`);
+                console.log('\nTo log in as a different user, run `mnee logout` first.');
+                return;
+            }
+            catch (error) {
+                // Token is invalid, continue with login flow
+                console.log('⚠️  Previous session expired. Starting new authentication...\n');
+            }
+        }
         console.log('🔐 Starting authentication flow...');
         console.log('Press Ctrl+C to cancel at any time.\n');
         const result = await startAuthFlow(apiUrl);
-        const config = await loadConfig();
+        // Update config with new auth info
         config.token = result.token;
-        config.environment = result.environment.toLowerCase();
         config.email = result.user.email;
+        config.environment = options.env;
         await saveConfig(config);
         console.log(`\n✅ Successfully authenticated as ${result.user.email}`);
-        console.log(`Environment: ${result.environment}`);
+        console.log(`Environment: ${options.env}`);
         console.log('\nYou can now use CLI commands like:');
-        console.log('  mnee faucet - Request sandbox tokens');
+        if (options.env === 'sandbox') {
+            console.log('  mnee faucet - Request sandbox tokens');
+        }
         console.log('  mnee whoami - Show current user');
         console.log('  mnee logout - Sign out');
     }
@@ -646,7 +663,6 @@ program
             console.log('ℹ️ Not logged in.');
             return;
         }
-        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
         // Call logout API
         await logoutApi(apiUrl, config.token);
         // Clear local config
@@ -667,16 +683,15 @@ program
             console.log('❌ Not logged in. Run `mnee login` to authenticate.');
             return;
         }
-        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
         try {
             const profile = await getProfile(apiUrl, config.token);
             console.log('\n👤 Current User:');
             console.log(`Email: ${profile.email}`);
             console.log(`Name: ${profile.name || 'Not set'}`);
-            console.log(`Environment: ${profile.environment}`);
             if (profile.company) {
                 console.log(`Company: ${profile.company}`);
             }
+            console.log(`Environment: ${config.environment || 'sandbox'}`);
             console.log('');
         }
         catch (error) {
@@ -694,6 +709,11 @@ program
     .option('-a, --address <address>', 'Deposit address (defaults to active wallet)')
     .action(async (options) => {
     try {
+        const activeWallet = await getActiveWallet();
+        if (!activeWallet) {
+            console.error('❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.');
+            return;
+        }
         const config = await loadConfig();
         if (!config.token) {
             console.log('❌ Not logged in. Run `mnee login` to authenticate.');
@@ -702,41 +722,31 @@ program
         // Get deposit address
         let depositAddress = options.address;
         if (!depositAddress) {
-            const activeWallet = await getActiveWallet();
-            if (activeWallet) {
-                depositAddress = activeWallet.address;
-                console.log(`Using active wallet address: ${depositAddress}`);
-            }
-            else {
-                console.error('❌ No deposit address specified and no active wallet found.');
-                console.log('Use --address flag or create a wallet with `mnee create`.');
-                return;
-            }
+            depositAddress = activeWallet.address;
+            console.log(`Using active wallet address: ${depositAddress}`);
         }
-        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
+        if (activeWallet.environment === 'production') {
+            console.log('❌ The faucet is only available in sandbox mode.');
+            console.log('Production tokens must be purchased.');
+            return;
+        }
         console.log('\n💧 Requesting sandbox tokens...');
         const response = await fetch(`${apiUrl}/faucet/cli`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${config.token}`,
+                Authorization: `Bearer ${config.token}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({ depositAddress }),
         });
-        const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result.message || 'Failed to request tokens');
-        }
+        const result = (await response.json());
         if (result.success) {
             console.log(`\n✅ Success! ${result.amount || 10} MNEE tokens sent.`);
             console.log(`Transaction ID: ${result.txid}`);
             console.log(`\nView on WhatsOnChain: https://whatsonchain.com/tx/${result.txid}`);
         }
         else {
-            console.error(`\n❌ ${result.message}`);
-            if (result.timeRemaining) {
-                console.log(`Please try again in ${result.timeRemaining}.`);
-            }
+            console.error(`\n❌ ${result.message || 'Failed to request tokens'}`);
         }
     }
     catch (error) {

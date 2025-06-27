@@ -100,7 +100,9 @@ export async function startAuthFlow(apiUrl) {
                     body: JSON.stringify({ redirectUri }),
                 });
                 if (!initResponse.ok) {
-                    throw new Error('Failed to initialize authentication session');
+                    const errorText = await initResponse.text();
+                    console.error('API Error:', initResponse.status, errorText);
+                    throw new Error(`Failed to initialize authentication session: ${initResponse.status}`);
                 }
                 const initData = await initResponse.json();
                 console.log(`\nOpening browser for authentication...`);
@@ -163,14 +165,27 @@ export async function getProfile(apiUrl, token) {
 }
 export async function logout(apiUrl, token) {
     try {
-        await fetch(`${apiUrl}/cli/auth/logout`, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        const response = await fetch(`${apiUrl}/cli/auth/logout`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
             },
+            signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+        if (!response.ok && response.status !== 404) {
+            console.warn('⚠️  Logout API returned an error, but local session cleared.');
+        }
     }
     catch (error) {
-        // Ignore errors during logout
+        if (error.name === 'AbortError') {
+            console.warn('⚠️  Logout request timed out, but local session cleared.');
+        }
+        else if (error.code === 'ECONNREFUSED') {
+            console.warn('⚠️  Could not connect to server, but local session cleared.');
+        }
+        // Still proceed with local logout even if API call fails
     }
 }

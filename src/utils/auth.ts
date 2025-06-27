@@ -7,9 +7,9 @@ import open from 'open';
 
 export interface CliConfig {
   token?: string;
-  environment?: 'sandbox' | 'production';
   email?: string;
   defaultAddress?: string;
+  environment?: 'sandbox' | 'production';
 }
 
 const CONFIG_DIR = path.join(os.homedir(), '.mnee');
@@ -48,7 +48,6 @@ export async function clearConfig(): Promise<void> {
 
 export interface AuthResult {
   token: string;
-  environment: 'SANDBOX' | 'PRODUCTION';
   user: {
     email: string;
     name?: string;
@@ -128,7 +127,9 @@ export async function startAuthFlow(apiUrl: string): Promise<AuthResult> {
         });
         
         if (!initResponse.ok) {
-          throw new Error('Failed to initialize authentication session');
+          const errorText = await initResponse.text();
+          console.error('API Error:', initResponse.status, errorText);
+          throw new Error(`Failed to initialize authentication session: ${initResponse.status}`);
         }
         
         const initData = await initResponse.json() as { state: string; authUrl: string };
@@ -204,13 +205,28 @@ export async function getProfile(apiUrl: string, token: string): Promise<any> {
 
 export async function logout(apiUrl: string, token: string): Promise<void> {
   try {
-    await fetch(`${apiUrl}/cli/auth/logout`, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    const response = await fetch(`${apiUrl}/cli/auth/logout`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+      signal: controller.signal,
     });
-  } catch (error) {
-    // Ignore errors during logout
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok && response.status !== 404) {
+      console.warn('⚠️  Logout API returned an error, but local session cleared.');
+    }
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.warn('⚠️  Logout request timed out, but local session cleared.');
+    } else if (error.code === 'ECONNREFUSED') {
+      console.warn('⚠️  Could not connect to server, but local session cleared.');
+    }
+    // Still proceed with local logout even if API call fails
   }
 }
