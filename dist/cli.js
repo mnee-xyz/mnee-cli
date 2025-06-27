@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { PrivateKey } from '@bsv/sdk';
 import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWalletByAddress, setPrivateKey, deletePrivateKey, getPrivateKey, clearActiveWallet, getLegacyWallet, deleteLegacyWallet, } from './utils/keytar.js';
-import { singleLineLogger } from './utils/helper.js';
+import { getVersion, singleLineLogger } from './utils/helper.js';
 import Mnee from 'mnee';
 import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
 const getMneeInstance = (environment, apiKey) => {
@@ -34,7 +34,7 @@ $$/      $$/ $$/   $$/ $$$$$$$$/ $$$$$$$$/        $$$$$$/  $$$$$$$$/ $$$$$$/
 
 `);
 }
-program.name('mnee').description('CLI for interacting with MNEE tokens').version('1.0.0');
+program.name('mnee').description('CLI for interacting with MNEE tokens').version(getVersion());
 // Add error handling for the main program
 program.exitOverride((err) => {
     if (err.code === 'commander.help') {

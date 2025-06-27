@@ -20,7 +20,7 @@ import {
   getLegacyWallet,
   deleteLegacyWallet,
 } from './utils/keytar.js';
-import { singleLineLogger } from './utils/helper.js';
+import { getVersion, singleLineLogger } from './utils/helper.js';
 import Mnee, { SendMNEE, TxHistory } from 'mnee';
 import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
 
@@ -52,7 +52,7 @@ $$/      $$/ $$/   $$/ $$$$$$$$/ $$$$$$$$/        $$$$$$/  $$$$$$$$/ $$$$$$/
 `);
 }
 
-program.name('mnee').description('CLI for interacting with MNEE tokens').version('1.0.0');
+program.name('mnee').description('CLI for interacting with MNEE tokens').version(getVersion());
 
 // Add error handling for the main program
 program.exitOverride((err) => {
