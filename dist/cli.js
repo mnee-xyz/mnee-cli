@@ -8,6 +8,7 @@ import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWallet
 import { getVersion, singleLineLogger } from './utils/helper.js';
 import Mnee from 'mnee';
 import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
+import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 const getMneeInstance = (environment, apiKey) => {
     return new Mnee({ environment, apiKey });
 };
@@ -606,6 +607,140 @@ program
     }
     catch (error) {
         console.error('\n❌ Error importing wallet:', error);
+    }
+});
+program
+    .command('login')
+    .description('Authenticate with MNEE Developer Portal')
+    .option('-e, --env <environment>', 'Set default environment (sandbox/production)', 'sandbox')
+    .action(async (options) => {
+    try {
+        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
+        console.log('🔐 Starting authentication flow...');
+        console.log('Press Ctrl+C to cancel at any time.\n');
+        const result = await startAuthFlow(apiUrl);
+        const config = await loadConfig();
+        config.token = result.token;
+        config.environment = result.environment.toLowerCase();
+        config.email = result.user.email;
+        await saveConfig(config);
+        console.log(`\n✅ Successfully authenticated as ${result.user.email}`);
+        console.log(`Environment: ${result.environment}`);
+        console.log('\nYou can now use CLI commands like:');
+        console.log('  mnee faucet - Request sandbox tokens');
+        console.log('  mnee whoami - Show current user');
+        console.log('  mnee logout - Sign out');
+    }
+    catch (error) {
+        console.error('\n❌ Authentication failed:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('logout')
+    .description('Sign out from MNEE Developer Portal')
+    .action(async () => {
+    try {
+        const config = await loadConfig();
+        if (!config.token) {
+            console.log('ℹ️ Not logged in.');
+            return;
+        }
+        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
+        // Call logout API
+        await logoutApi(apiUrl, config.token);
+        // Clear local config
+        await clearConfig();
+        console.log('✅ Successfully logged out.');
+    }
+    catch (error) {
+        console.error('❌ Error during logout:', error.message);
+    }
+});
+program
+    .command('whoami')
+    .description('Show current authenticated user')
+    .action(async () => {
+    try {
+        const config = await loadConfig();
+        if (!config.token) {
+            console.log('❌ Not logged in. Run `mnee login` to authenticate.');
+            return;
+        }
+        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
+        try {
+            const profile = await getProfile(apiUrl, config.token);
+            console.log('\n👤 Current User:');
+            console.log(`Email: ${profile.email}`);
+            console.log(`Name: ${profile.name || 'Not set'}`);
+            console.log(`Environment: ${profile.environment}`);
+            if (profile.company) {
+                console.log(`Company: ${profile.company}`);
+            }
+            console.log('');
+        }
+        catch (error) {
+            console.error('❌ Failed to get user profile. Your session may have expired.');
+            console.log('Run `mnee login` to authenticate again.');
+        }
+    }
+    catch (error) {
+        console.error('❌ Error:', error.message);
+    }
+});
+program
+    .command('faucet')
+    .description('Request sandbox tokens (requires authentication)')
+    .option('-a, --address <address>', 'Deposit address (defaults to active wallet)')
+    .action(async (options) => {
+    try {
+        const config = await loadConfig();
+        if (!config.token) {
+            console.log('❌ Not logged in. Run `mnee login` to authenticate.');
+            return;
+        }
+        // Get deposit address
+        let depositAddress = options.address;
+        if (!depositAddress) {
+            const activeWallet = await getActiveWallet();
+            if (activeWallet) {
+                depositAddress = activeWallet.address;
+                console.log(`Using active wallet address: ${depositAddress}`);
+            }
+            else {
+                console.error('❌ No deposit address specified and no active wallet found.');
+                console.log('Use --address flag or create a wallet with `mnee create`.');
+                return;
+            }
+        }
+        const apiUrl = process.env.MNEE_API_URL || 'https://api.mnee.net';
+        console.log('\n💧 Requesting sandbox tokens...');
+        const response = await fetch(`${apiUrl}/faucet/cli`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${config.token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ depositAddress }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message || 'Failed to request tokens');
+        }
+        if (result.success) {
+            console.log(`\n✅ Success! ${result.amount || 10} MNEE tokens sent.`);
+            console.log(`Transaction ID: ${result.txid}`);
+            console.log(`\nView on WhatsOnChain: https://whatsonchain.com/tx/${result.txid}`);
+        }
+        else {
+            console.error(`\n❌ ${result.message}`);
+            if (result.timeRemaining) {
+                console.log(`Please try again in ${result.timeRemaining}.`);
+            }
+        }
+    }
+    catch (error) {
+        console.error('\n❌ Faucet request failed:', error.message);
     }
 });
 const migrateOldWallets = async () => {

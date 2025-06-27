@@ -41,7 +41,8 @@
     "inquirer": "^12.4.2",
     "js-1sat-ord": "^0.1.80",
     "keytar": "^7.9.0",
-    "mnee": "^2.1.4"
+    "mnee": "^2.1.4",
+    "open": "^10.1.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
