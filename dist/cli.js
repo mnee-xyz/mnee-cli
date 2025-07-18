@@ -470,6 +470,40 @@ program
     }
 });
 program
+    .command('use')
+    .description('Switch to a different wallet')
+    .argument('<walletName>', 'Name of the wallet to switch to')
+    .action(async (walletName) => {
+    try {
+        const wallets = await getAllWallets();
+        if (wallets.length === 0) {
+            console.error('❌ No wallets found. Run `mnee create` to create a wallet.');
+            return;
+        }
+        const wallet = wallets.find((w) => w.name === walletName);
+        if (!wallet) {
+            console.error(`❌ Wallet "${walletName}" not found.`);
+            console.log('\nAvailable wallets:');
+            wallets.forEach((w) => {
+                console.log(`  - ${w.name} (${w.environment})`);
+            });
+            return;
+        }
+        // Update all wallets to set the active state
+        wallets.forEach((w) => {
+            w.isActive = w.name === walletName;
+        });
+        await saveWallets(wallets);
+        await setActiveWallet(wallet);
+        console.log(`\n✅ Switched to wallet: ${wallet.name}`);
+        console.log(`Environment: ${wallet.environment}`);
+        console.log(`Address: ${wallet.address}`);
+    }
+    catch (error) {
+        console.error('\n❌ Error switching wallet:', error);
+    }
+});
+program
     .command('rename')
     .description('Rename a wallet')
     .argument('<oldName>', 'Current name of the wallet')
