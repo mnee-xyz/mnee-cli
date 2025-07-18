@@ -94,8 +94,8 @@ program
               return validation.error || 'Invalid wallet name';
             }
 
-            if (existingWallets.some((w) => w.name === input)) {
-              return `A wallet with name "${input}" already exists`;
+            if (existingWallets.some((w) => w.name.toLowerCase() === input.toLowerCase())) {
+              return `A wallet with name "${input}" already exists (names are case-insensitive)`;
             }
 
             return true;
@@ -590,7 +590,7 @@ program
         return;
       }
 
-      const wallet = wallets.find((w) => w.name === walletName);
+      const wallet = wallets.find((w) => w.name.toLowerCase() === walletName.toLowerCase());
 
       if (!wallet) {
         console.error(`❌ Wallet "${walletName}" not found.`);
@@ -603,7 +603,7 @@ program
 
       // Update all wallets to set the active state
       wallets.forEach((w) => {
-        w.isActive = w.name === walletName;
+        w.isActive = w.name === wallet.name;
       });
 
       await saveWallets(wallets);
@@ -637,7 +637,7 @@ program
         return;
       }
 
-      const wallet = wallets.find((w) => w.name === oldName);
+      const wallet = wallets.find((w) => w.name.toLowerCase() === oldName.toLowerCase());
 
       if (!wallet) {
         console.error(`❌ Wallet "${oldName}" not found.`);
@@ -645,8 +645,8 @@ program
         return;
       }
 
-      if (wallets.some((w) => w.name === newName)) {
-        console.error(`❌ A wallet with name "${newName}" already exists.`);
+      if (wallets.some((w) => w.name.toLowerCase() === newName.toLowerCase() && w.name !== oldName)) {
+        console.error(`❌ A wallet with name "${newName}" already exists (names are case-insensitive).`);
         return;
       }
 
@@ -727,8 +727,8 @@ program
               return validation.error || 'Invalid wallet name';
             }
 
-            if (existingWallets.some((w) => w.name === input)) {
-              return `A wallet with name "${input}" already exists`;
+            if (existingWallets.some((w) => w.name.toLowerCase() === input.toLowerCase())) {
+              return `A wallet with name "${input}" already exists (names are case-insensitive)`;
             }
 
             return true;
