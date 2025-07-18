@@ -156,9 +156,14 @@ program
         return;
     }
     singleLineLogger.start(`Fetching balance for ${activeWallet.name} (${activeWallet.environment})...`);
-    const mneeInstance = getMneeInstance(activeWallet.environment);
-    const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
-    singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
+    try {
+        const mneeInstance = getMneeInstance(activeWallet.environment);
+        const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
+        singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
+    }
+    catch {
+        singleLineLogger.done('');
+    }
 });
 program
     .command('history')
@@ -172,50 +177,55 @@ program
         return;
     }
     singleLineLogger.start(`Fetching history for ${activeWallet.name} (${activeWallet.environment})...`);
-    const mneeInstance = getMneeInstance(activeWallet.environment);
-    let nextScore = undefined;
-    let hasMore = true;
-    let history = [];
-    let attempts = 0;
-    const maxAttempts = 20; // Safety limit to prevent infinite loops
-    if (options.fresh) {
-        console.log('Fresh mode: Clearing cache and fetching from the beginning...');
-        clearTxHistoryCache(activeWallet);
-    }
-    else {
-        const cachedData = readTxHistoryCache(activeWallet);
-        if (cachedData) {
-            history = cachedData.history;
-            nextScore = cachedData.nextScore;
-            // If nextScore is 0, we have all history
-            if (nextScore === 0) {
-                console.log(JSON.stringify(history, null, 2));
-                singleLineLogger.done(`\nHistory fetched successfully from cache!\n`);
-                return;
+    try {
+        const mneeInstance = getMneeInstance(activeWallet.environment);
+        let nextScore = undefined;
+        let hasMore = true;
+        let history = [];
+        let attempts = 0;
+        const maxAttempts = 20; // Safety limit to prevent infinite loops
+        if (options.fresh) {
+            console.log('Fresh mode: Clearing cache and fetching from the beginning...');
+            clearTxHistoryCache(activeWallet);
+        }
+        else {
+            const cachedData = readTxHistoryCache(activeWallet);
+            if (cachedData) {
+                history = cachedData.history;
+                nextScore = cachedData.nextScore;
+                // If nextScore is 0, we have all history
+                if (nextScore === 0) {
+                    console.log(JSON.stringify(history, null, 2));
+                    singleLineLogger.done(`\nHistory fetched successfully from cache!\n`);
+                    return;
+                }
             }
         }
+        while (hasMore && attempts < maxAttempts) {
+            const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100);
+            if (newNextScore === nextScore && newNextScore !== undefined)
+                break;
+            history.push(...newHistory);
+            nextScore = newNextScore;
+            hasMore = nextScore !== 0 && nextScore !== undefined;
+            attempts++;
+        }
+        if (attempts >= maxAttempts) {
+            console.log('Reached maximum number of attempts. Some history may be missing.');
+        }
+        writeTxHistoryCache(activeWallet, history, nextScore || 0);
+        if (options.unconfirmed) {
+            const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
+            console.log(JSON.stringify(unconfirmedHistory, null, 2));
+        }
+        else {
+            console.log(JSON.stringify(history, null, 2));
+        }
+        singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
     }
-    while (hasMore && attempts < maxAttempts) {
-        const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100);
-        if (newNextScore === nextScore && newNextScore !== undefined)
-            break;
-        history.push(...newHistory);
-        nextScore = newNextScore;
-        hasMore = nextScore !== 0 && nextScore !== undefined;
-        attempts++;
+    catch {
+        singleLineLogger.done('');
     }
-    if (attempts >= maxAttempts) {
-        console.log('Reached maximum number of attempts. Some history may be missing.');
-    }
-    writeTxHistoryCache(activeWallet, history, nextScore || 0);
-    if (options.unconfirmed) {
-        const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
-        console.log(JSON.stringify(unconfirmedHistory, null, 2));
-    }
-    else {
-        console.log(JSON.stringify(history, null, 2));
-    }
-    singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
 });
 program
     .command('transfer')
@@ -260,13 +270,18 @@ program
         const privateKey = PrivateKey.fromString(privateKeyHex);
         const request = [{ address: toAddress, amount: parseFloat(amount) }];
         singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
-        const mneeInstance = getMneeInstance(activeWallet.environment);
-        const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
-        if (!txid) {
-            singleLineLogger.done(`❌ Transfer failed. ${error ? error : 'Please try again.'}`);
-            return;
+        try {
+            const mneeInstance = getMneeInstance(activeWallet.environment);
+            const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
+            if (!txid) {
+                singleLineLogger.done(`❌ Transfer failed. ${error ? error : 'Please try again.'}`);
+                return;
+            }
+            singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
         }
-        singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
+        catch {
+            singleLineLogger.done('');
+        }
     }
     catch (error) {
         console.log('\n❌ Operation interrupted.');
