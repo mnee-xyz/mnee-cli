@@ -87,6 +87,12 @@ program
                 name: 'password',
                 message: 'Set a password for your wallet:',
                 mask: '*',
+                validate: (input) => {
+                    if (input.length < 8) {
+                        return 'Password must be at least 8 characters long';
+                    }
+                    return true;
+                },
             },
             {
                 type: 'password',
@@ -571,6 +577,12 @@ program
                 name: 'password',
                 message: 'Set a password to encrypt your wallet:',
                 mask: '*',
+                validate: (input) => {
+                    if (input.length < 8) {
+                        return 'Password must be at least 8 characters long';
+                    }
+                    return true;
+                },
             },
             {
                 type: 'password',
