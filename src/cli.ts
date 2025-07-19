@@ -333,8 +333,14 @@ program
         return;
       }
 
+      const amountFloat = parseFloat(amount);
+      if (isNaN(amountFloat) || amountFloat <= 0 || amountFloat < 0.00001) {
+        console.error('❌ Invalid amount. Please enter a valid number greater than 0.00001.');
+        return;
+      }
+
       const privateKey = PrivateKey.fromString(privateKeyHex);
-      const request = [{ address: toAddress, amount: parseFloat(amount) }] as SendMNEE[];
+      const request = [{ address: toAddress, amount: amountFloat }] as SendMNEE[];
 
       singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
 

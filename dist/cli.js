@@ -267,8 +267,13 @@ program
             console.error('❌ Incorrect password! Decryption failed.');
             return;
         }
+        const amountFloat = parseFloat(amount);
+        if (isNaN(amountFloat) || amountFloat <= 0 || amountFloat < 0.00001) {
+            console.error('❌ Invalid amount. Please enter a valid number greater than 0.00001.');
+            return;
+        }
         const privateKey = PrivateKey.fromString(privateKeyHex);
-        const request = [{ address: toAddress, amount: parseFloat(amount) }];
+        const request = [{ address: toAddress, amount: amountFloat }];
         singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
         try {
             const mneeInstance = getMneeInstance(activeWallet.environment);
