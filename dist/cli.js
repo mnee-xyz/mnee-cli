@@ -242,6 +242,29 @@ program
                 type: 'input',
                 name: 'amount',
                 message: 'Enter the amount to transfer:',
+                validate: (input) => {
+                    // Check if the input is a valid number format
+                    const trimmed = input.trim();
+                    if (!trimmed) {
+                        return 'Amount is required';
+                    }
+                    // Regex to match valid decimal numbers (including scientific notation)
+                    const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+                    if (!validNumberRegex.test(trimmed)) {
+                        return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
+                    }
+                    const num = parseFloat(trimmed);
+                    if (isNaN(num)) {
+                        return 'Invalid amount. Please enter a valid number';
+                    }
+                    if (num <= 0) {
+                        return 'Amount must be greater than 0';
+                    }
+                    if (num < 0.00001) {
+                        return 'Amount must be at least 0.00001 MNEE';
+                    }
+                    return true;
+                },
             },
             {
                 type: 'input',
@@ -267,13 +290,8 @@ program
             console.error('❌ Incorrect password! Decryption failed.');
             return;
         }
-        const amountFloat = parseFloat(amount);
-        if (isNaN(amountFloat) || amountFloat <= 0 || amountFloat < 0.00001) {
-            console.error('❌ Invalid amount. Please enter a valid number greater than 0.00001.');
-            return;
-        }
         const privateKey = PrivateKey.fromString(privateKeyHex);
-        const request = [{ address: toAddress, amount: amountFloat }];
+        const request = [{ address: toAddress, amount: parseFloat(amount) }];
         singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
         try {
             const mneeInstance = getMneeInstance(activeWallet.environment);
