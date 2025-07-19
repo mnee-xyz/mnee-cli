@@ -214,6 +214,12 @@ program
   .description('Get the history of the wallet')
   .option('-u, --unconfirmed', 'Show unconfirmed transactions')
   .option('-f, --fresh', 'Clear cache and fetch fresh history from the beginning')
+  // TODO: Future enhancement - Add filtering options:
+  // - Filter by transaction type (send/receive)
+  // - Filter by status (confirmed/unconfirmed) 
+  // - Filter by transaction ID
+  // - Filter by counterparty address
+  // - Filter by amount range
   .action(async (options) => {
     const activeWallet = await getActiveWallet();
 
@@ -245,8 +251,14 @@ program
 
           // If nextScore is 0, we have all history
           if (nextScore === 0) {
-            console.log(JSON.stringify(history, null, 2));
-            singleLineLogger.done(`\nHistory fetched successfully from cache!\n`);
+            if (options.unconfirmed) {
+              const unconfirmedHistory = history.filter((tx: any) => tx.status === 'unconfirmed');
+              console.log(JSON.stringify(unconfirmedHistory, null, 2));
+              singleLineLogger.done(`\n${unconfirmedHistory.length} unconfirmed transaction${unconfirmedHistory.length !== 1 ? 's' : ''} fetched successfully from cache!\n`);
+            } else {
+              console.log(JSON.stringify(history, null, 2));
+              singleLineLogger.done(`\n${history.length} transactions fetched successfully from cache!\n`);
+            }
             return;
           }
         }
@@ -276,10 +288,11 @@ program
       if (options.unconfirmed) {
         const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
         console.log(JSON.stringify(unconfirmedHistory, null, 2));
+        singleLineLogger.done(`\n${unconfirmedHistory.length} unconfirmed transaction${unconfirmedHistory.length !== 1 ? 's' : ''} fetched successfully!\n`);
       } else {
         console.log(JSON.stringify(history, null, 2));
+        singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
       }
-      singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
     } catch {
       singleLineLogger.done('');
     }
