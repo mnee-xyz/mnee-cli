@@ -140,31 +140,27 @@ program
 
       const wallets = await getAllWallets();
 
+      wallets.forEach((wallet) => {
+        wallet.isActive = false;
+      });
+
       const newWallet: WalletInfo = {
         address,
         environment,
         name: walletName,
-        isActive: wallets.length === 0,
+        isActive: true,
       };
 
       wallets.push(newWallet);
       await saveWallets(wallets);
       await setPrivateKey(address, encryptedKey);
-
-      if (newWallet.isActive) {
-        await setActiveWallet(newWallet);
-      }
+      await setActiveWallet(newWallet);
 
       console.log('\n✅ Wallet created successfully!');
       console.log(`\nName: ${walletName}`);
       console.log(`Environment: ${environment}`);
       console.log(`Address: ${address}\n`);
-
-      if (newWallet.isActive) {
-        console.log('This wallet is now your active wallet.');
-      } else {
-        console.log(`To use this wallet, run: mnee use ${walletName}`);
-      }
+      console.log('This wallet is now your active wallet.');
     } catch (error) {
       console.error('\n❌ Error creating wallet:', error);
     }
@@ -866,8 +862,7 @@ program
 program
   .command('login')
   .description('Authenticate with MNEE Developer Portal')
-  .option('-e, --env <environment>', 'Set default environment (sandbox/production)', 'sandbox')
-  .action(async (options) => {
+  .action(async () => {
     try {
       // Check if already logged in
       const config = await loadConfig();
@@ -893,16 +888,12 @@ program
       // Update config with new auth info
       config.token = result.token;
       config.email = result.user.email;
-      config.environment = options.env as 'sandbox' | 'production';
 
       await saveConfig(config);
 
       console.log(`\n✅ Successfully authenticated as ${result.user.email}`);
-      console.log(`Environment: ${options.env}`);
       console.log('\nYou can now use CLI commands like:');
-      if (options.env === 'sandbox') {
-        console.log('  mnee faucet - Request sandbox tokens');
-      }
+      console.log('  mnee faucet - Request sandbox tokens (sandbox wallets only)');
       console.log('  mnee whoami - Show current user');
       console.log('  mnee logout - Sign out');
     } catch (error: any) {
@@ -956,7 +947,6 @@ program
         if (profile.company) {
           console.log(`Company: ${profile.company}`);
         }
-        console.log(`Environment: ${config.environment || 'sandbox'}`);
         console.log('');
       } catch (error) {
         console.error('❌ Failed to get user profile. Your session may have expired.');
@@ -1018,7 +1008,7 @@ program
       if (result.success) {
         console.log(`\n✅ Success! ${result.amount || 10} MNEE tokens sent.`);
         console.log(`Transaction ID: ${result.txid}`);
-        console.log(`\nView on WhatsOnChain: https://whatsonchain.com/tx/${result.txid}`);
+        console.log(`\nView on WhatsOnChain: https://whatsonchain.com/tx/${result.txid}?tab=m8eqcrbs`);
       } else {
         console.error(`\n❌ ${result.message || 'Failed to request tokens'}`);
       }

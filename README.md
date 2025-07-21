@@ -53,6 +53,7 @@ mnee
 
 ## Commands
 
+### Wallet Management
 - `mnee create`: Create a new wallet
 - `mnee address`: Get your wallet address
 - `mnee balance`: Check your MNEE balance
@@ -65,6 +66,14 @@ mnee
 - `mnee history`: View transaction history
   - `-u, --unconfirmed`: Show unconfirmed transactions
   - `-f, --fresh`: Clear cache and fetch fresh history from the beginning
+
+### Authentication & Developer Portal
+- `mnee login`: Authenticate with MNEE Developer Portal
+- `mnee logout`: Sign out from MNEE Developer Portal
+- `mnee whoami`: Show current authenticated user information
+- `mnee faucet`: Request sandbox tokens (requires authentication)
+  - `-a, --address <address>`: Deposit address (defaults to active wallet)
+  - Note: Only available in sandbox mode
 
 ## Contributing
 
