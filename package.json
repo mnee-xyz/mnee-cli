@@ -1,12 +1,13 @@
 {
   "name": "mnee-cli",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "MNEE CLI tool",
   "main": "dist/cli.js",
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc && npm pack",
+    "build": "npm run clean && tsc && npm run postbuild && npm pack",
+    "postbuild": "chmod +x dist/cli.js",
     "start": "node dist/cli.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepublishOnly": "npm run build",
