@@ -172,7 +172,7 @@ program
     .option('-f, --fresh', 'Clear cache and fetch fresh history from the beginning')
     // TODO: Future enhancement - Add filtering options:
     // - Filter by transaction type (send/receive)
-    // - Filter by status (confirmed/unconfirmed) 
+    // - Filter by status (confirmed/unconfirmed)
     // - Filter by transaction ID
     // - Filter by counterparty address
     // - Filter by amount range
@@ -311,7 +311,11 @@ program
             const mneeInstance = getMneeInstance(activeWallet.environment);
             const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
             if (!txid) {
-                singleLineLogger.done(`❌ Transfer failed. ${error ? error : 'Please try again.'}`);
+                singleLineLogger.done(`❌ Transfer failed. ${error
+                    ? error.includes('status: 423')
+                        ? 'The sending or receiving address may be frozen or blacklisted. Please visit https://mnee.io and contact support for questions or concerns.'
+                        : 'Please try again.'
+                    : 'Please try again.'}`);
                 return;
             }
             singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);

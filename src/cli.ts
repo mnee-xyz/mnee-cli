@@ -216,7 +216,7 @@ program
   .option('-f, --fresh', 'Clear cache and fetch fresh history from the beginning')
   // TODO: Future enhancement - Add filtering options:
   // - Filter by transaction type (send/receive)
-  // - Filter by status (confirmed/unconfirmed) 
+  // - Filter by status (confirmed/unconfirmed)
   // - Filter by transaction ID
   // - Filter by counterparty address
   // - Filter by amount range
@@ -254,7 +254,11 @@ program
             if (options.unconfirmed) {
               const unconfirmedHistory = history.filter((tx: any) => tx.status === 'unconfirmed');
               console.log(JSON.stringify(unconfirmedHistory, null, 2));
-              singleLineLogger.done(`\n${unconfirmedHistory.length} unconfirmed transaction${unconfirmedHistory.length !== 1 ? 's' : ''} fetched successfully from cache!\n`);
+              singleLineLogger.done(
+                `\n${unconfirmedHistory.length} unconfirmed transaction${
+                  unconfirmedHistory.length !== 1 ? 's' : ''
+                } fetched successfully from cache!\n`,
+              );
             } else {
               console.log(JSON.stringify(history, null, 2));
               singleLineLogger.done(`\n${history.length} transactions fetched successfully from cache!\n`);
@@ -288,7 +292,11 @@ program
       if (options.unconfirmed) {
         const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
         console.log(JSON.stringify(unconfirmedHistory, null, 2));
-        singleLineLogger.done(`\n${unconfirmedHistory.length} unconfirmed transaction${unconfirmedHistory.length !== 1 ? 's' : ''} fetched successfully!\n`);
+        singleLineLogger.done(
+          `\n${unconfirmedHistory.length} unconfirmed transaction${
+            unconfirmedHistory.length !== 1 ? 's' : ''
+          } fetched successfully!\n`,
+        );
       } else {
         console.log(JSON.stringify(history, null, 2));
         singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
@@ -323,26 +331,26 @@ program
             if (!trimmed) {
               return 'Amount is required';
             }
-            
+
             // Regex to match valid decimal numbers (including scientific notation)
             const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
             if (!validNumberRegex.test(trimmed)) {
               return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
             }
-            
+
             const num = parseFloat(trimmed);
             if (isNaN(num)) {
               return 'Invalid amount. Please enter a valid number';
             }
-            
+
             if (num <= 0) {
               return 'Amount must be greater than 0';
             }
-            
+
             if (num < 0.00001) {
               return 'Amount must be at least 0.00001 MNEE';
             }
-            
+
             return true;
           },
         },
@@ -384,7 +392,15 @@ program
         const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
 
         if (!txid) {
-          singleLineLogger.done(`❌ Transfer failed. ${error ? error : 'Please try again.'}`);
+          singleLineLogger.done(
+            `❌ Transfer failed. ${
+              error
+                ? error.includes('status: 423')
+                  ? 'The sending or receiving address may be frozen or blacklisted. Please visit https://mnee.io and contact support for questions or concerns.'
+                  : 'Please try again.'
+                : 'Please try again.'
+            }`,
+          );
           return;
         }
 
