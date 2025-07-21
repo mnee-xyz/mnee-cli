@@ -97,8 +97,8 @@ program
               return validation.error || 'Invalid wallet name';
             }
 
-            if (existingWallets.some((w) => w.name === input)) {
-              return `A wallet with name "${input}" already exists`;
+            if (existingWallets.some((w) => w.name.toLowerCase() === input.toLowerCase())) {
+              return `A wallet with name "${input}" already exists (names are case-insensitive)`;
             }
 
             return true;
@@ -116,6 +116,12 @@ program
           name: 'password',
           message: 'Set a password for your wallet:',
           mask: '*',
+          validate: (input: string) => {
+            if (input.length < 8) {
+              return 'Password must be at least 8 characters long';
+            }
+            return true;
+          },
         },
         {
           type: 'password',
@@ -196,10 +202,14 @@ program
 
     singleLineLogger.start(`Fetching balance for ${activeWallet.name} (${activeWallet.environment})...`);
 
-    const mneeInstance = getMneeInstance(activeWallet.environment);
-    const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
+    try {
+      const mneeInstance = getMneeInstance(activeWallet.environment);
+      const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
 
-    singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
+      singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
+    } catch {
+      singleLineLogger.done('');
+    }
   });
 
 program
@@ -207,6 +217,12 @@ program
   .description('Get the history of the wallet')
   .option('-u, --unconfirmed', 'Show unconfirmed transactions')
   .option('-f, --fresh', 'Clear cache and fetch fresh history from the beginning')
+  // TODO: Future enhancement - Add filtering options:
+  // - Filter by transaction type (send/receive)
+  // - Filter by status (confirmed/unconfirmed)
+  // - Filter by transaction ID
+  // - Filter by counterparty address
+  // - Filter by amount range
   .action(async (options) => {
     const activeWallet = await getActiveWallet();
 
@@ -219,59 +235,78 @@ program
 
     singleLineLogger.start(`Fetching history for ${activeWallet.name} (${activeWallet.environment})...`);
 
-    const mneeInstance = getMneeInstance(activeWallet.environment);
-    let nextScore = undefined;
-    let hasMore = true;
-    let history: TxHistory[] = [];
-    let attempts = 0;
-    const maxAttempts = 20; // Safety limit to prevent infinite loops
+    try {
+      const mneeInstance = getMneeInstance(activeWallet.environment);
+      let nextScore = undefined;
+      let hasMore = true;
+      let history: TxHistory[] = [];
+      let attempts = 0;
+      const maxAttempts = 20; // Safety limit to prevent infinite loops
 
-    if (options.fresh) {
-      console.log('Fresh mode: Clearing cache and fetching from the beginning...');
-      clearTxHistoryCache(activeWallet);
-    } else {
-      const cachedData = readTxHistoryCache(activeWallet);
-      if (cachedData) {
-        history = cachedData.history;
-        nextScore = cachedData.nextScore;
+      if (options.fresh) {
+        console.log('Fresh mode: Clearing cache and fetching from the beginning...');
+        clearTxHistoryCache(activeWallet);
+      } else {
+        const cachedData = readTxHistoryCache(activeWallet);
+        if (cachedData) {
+          history = cachedData.history;
+          nextScore = cachedData.nextScore;
 
-        // If nextScore is 0, we have all history
-        if (nextScore === 0) {
-          console.log(JSON.stringify(history, null, 2));
-          singleLineLogger.done(`\nHistory fetched successfully from cache!\n`);
-          return;
+          // If nextScore is 0, we have all history
+          if (nextScore === 0) {
+            if (options.unconfirmed) {
+              const unconfirmedHistory = history.filter((tx: any) => tx.status === 'unconfirmed');
+              console.log(JSON.stringify(unconfirmedHistory, null, 2));
+              singleLineLogger.done(
+                `\n${unconfirmedHistory.length} unconfirmed transaction${
+                  unconfirmedHistory.length !== 1 ? 's' : ''
+                } fetched successfully from cache!\n`,
+              );
+            } else {
+              console.log(JSON.stringify(history, null, 2));
+              singleLineLogger.done(`\n${history.length} transactions fetched successfully from cache!\n`);
+            }
+            return;
+          }
         }
       }
+
+      while (hasMore && attempts < maxAttempts) {
+        const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(
+          activeWallet.address,
+          nextScore,
+          100,
+        );
+
+        if (newNextScore === nextScore && newNextScore !== undefined) break;
+
+        history.push(...newHistory);
+        nextScore = newNextScore;
+        hasMore = nextScore !== 0 && nextScore !== undefined;
+        attempts++;
+      }
+
+      if (attempts >= maxAttempts) {
+        console.log('Reached maximum number of attempts. Some history may be missing.');
+      }
+
+      writeTxHistoryCache(activeWallet, history, nextScore || 0);
+
+      if (options.unconfirmed) {
+        const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
+        console.log(JSON.stringify(unconfirmedHistory, null, 2));
+        singleLineLogger.done(
+          `\n${unconfirmedHistory.length} unconfirmed transaction${
+            unconfirmedHistory.length !== 1 ? 's' : ''
+          } fetched successfully!\n`,
+        );
+      } else {
+        console.log(JSON.stringify(history, null, 2));
+        singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
+      }
+    } catch {
+      singleLineLogger.done('');
     }
-
-    while (hasMore && attempts < maxAttempts) {
-      const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(
-        activeWallet.address,
-        nextScore,
-        100,
-      );
-
-      if (newNextScore === nextScore && newNextScore !== undefined) break;
-
-      history.push(...newHistory);
-      nextScore = newNextScore;
-      hasMore = nextScore !== 0 && nextScore !== undefined;
-      attempts++;
-    }
-
-    if (attempts >= maxAttempts) {
-      console.log('Reached maximum number of attempts. Some history may be missing.');
-    }
-
-    writeTxHistoryCache(activeWallet, history, nextScore || 0);
-
-    if (options.unconfirmed) {
-      const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
-      console.log(JSON.stringify(unconfirmedHistory, null, 2));
-    } else {
-      console.log(JSON.stringify(history, null, 2));
-    }
-    singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
   });
 
 program
@@ -293,6 +328,34 @@ program
           type: 'input',
           name: 'amount',
           message: 'Enter the amount to transfer:',
+          validate: (input: string) => {
+            // Check if the input is a valid number format
+            const trimmed = input.trim();
+            if (!trimmed) {
+              return 'Amount is required';
+            }
+
+            // Regex to match valid decimal numbers (including scientific notation)
+            const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+            if (!validNumberRegex.test(trimmed)) {
+              return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
+            }
+
+            const num = parseFloat(trimmed);
+            if (isNaN(num)) {
+              return 'Invalid amount. Please enter a valid number';
+            }
+
+            if (num <= 0) {
+              return 'Amount must be greater than 0';
+            }
+
+            if (num < 0.00001) {
+              return 'Amount must be at least 0.00001 MNEE';
+            }
+
+            return true;
+          },
         },
         {
           type: 'input',
@@ -327,15 +390,27 @@ program
 
       singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
 
-      const mneeInstance = getMneeInstance(activeWallet.environment);
-      const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
+      try {
+        const mneeInstance = getMneeInstance(activeWallet.environment);
+        const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
 
-      if (!txid) {
-        singleLineLogger.done(`❌ Transfer failed. ${error ? error : 'Please try again.'}`);
-        return;
+        if (!txid) {
+          singleLineLogger.done(
+            `❌ Transfer failed. ${
+              error
+                ? error.includes('status: 423')
+                  ? 'The sending or receiving address may be frozen or blacklisted. Please visit https://mnee.io and contact support for questions or concerns.'
+                  : 'Please try again.'
+                : 'Please try again.'
+            }`,
+          );
+          return;
+        }
+
+        singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
+      } catch {
+        singleLineLogger.done('');
       }
-
-      singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
     } catch (error) {
       console.log('\n❌ Operation interrupted.');
       process.exit(1);
@@ -575,6 +650,46 @@ program
   });
 
 program
+  .command('use')
+  .description('Switch to a different wallet')
+  .argument('<walletName>', 'Name of the wallet to switch to')
+  .action(async (walletName) => {
+    try {
+      const wallets = await getAllWallets();
+
+      if (wallets.length === 0) {
+        console.error('❌ No wallets found. Run `mnee create` to create a wallet.');
+        return;
+      }
+
+      const wallet = wallets.find((w) => w.name.toLowerCase() === walletName.toLowerCase());
+
+      if (!wallet) {
+        console.error(`❌ Wallet "${walletName}" not found.`);
+        console.log('\nAvailable wallets:');
+        wallets.forEach((w) => {
+          console.log(`  - ${w.name} (${w.environment})`);
+        });
+        return;
+      }
+
+      // Update all wallets to set the active state
+      wallets.forEach((w) => {
+        w.isActive = w.name === wallet.name;
+      });
+
+      await saveWallets(wallets);
+      await setActiveWallet(wallet);
+
+      console.log(`\n✅ Switched to wallet: ${wallet.name}`);
+      console.log(`Environment: ${wallet.environment}`);
+      console.log(`Address: ${wallet.address}`);
+    } catch (error) {
+      console.error('\n❌ Error switching wallet:', error);
+    }
+  });
+
+program
   .command('rename')
   .description('Rename a wallet')
   .argument('<oldName>', 'Current name of the wallet')
@@ -594,7 +709,7 @@ program
         return;
       }
 
-      const wallet = wallets.find((w) => w.name === oldName);
+      const wallet = wallets.find((w) => w.name.toLowerCase() === oldName.toLowerCase());
 
       if (!wallet) {
         console.error(`❌ Wallet "${oldName}" not found.`);
@@ -602,8 +717,8 @@ program
         return;
       }
 
-      if (wallets.some((w) => w.name === newName)) {
-        console.error(`❌ A wallet with name "${newName}" already exists.`);
+      if (wallets.some((w) => w.name.toLowerCase() === newName.toLowerCase() && w.name !== oldName)) {
+        console.error(`❌ A wallet with name "${newName}" already exists (names are case-insensitive).`);
         return;
       }
 
@@ -684,8 +799,8 @@ program
               return validation.error || 'Invalid wallet name';
             }
 
-            if (existingWallets.some((w) => w.name === input)) {
-              return `A wallet with name "${input}" already exists`;
+            if (existingWallets.some((w) => w.name.toLowerCase() === input.toLowerCase())) {
+              return `A wallet with name "${input}" already exists (names are case-insensitive)`;
             }
 
             return true;
@@ -699,6 +814,12 @@ program
           name: 'password',
           message: 'Set a password to encrypt your wallet:',
           mask: '*',
+          validate: (input: string) => {
+            if (input.length < 8) {
+              return 'Password must be at least 8 characters long';
+            }
+            return true;
+          },
         },
         {
           type: 'password',

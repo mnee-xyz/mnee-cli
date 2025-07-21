@@ -13,11 +13,35 @@ MNEE CLI is a command-line interface tool designed for interacting with MNEE USD
 
 ## Installation
 
-To install MNEE CLI globally using npm, run the following command:
+### Windows & macOS
 
 ```sh
 npm install -g mnee-cli
 ```
+
+### Linux
+
+First install required system dependencies:
+
+**Ubuntu/Debian:**
+```sh
+sudo apt-get install libsecret-1-dev
+npm install -g mnee-cli
+```
+
+**Fedora/RHEL:**
+```sh
+sudo dnf install libsecret-devel
+npm install -g mnee-cli
+```
+
+**Arch Linux:**
+```sh
+sudo pacman -S libsecret
+npm install -g mnee-cli
+```
+
+**Note:** Linux systems require `libsecret` for secure credential storage. A desktop environment with a keyring service (like GNOME Keyring) should be running.
 
 ## Usage
 
