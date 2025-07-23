@@ -272,6 +272,16 @@ program
 
           // If nextScore is 0, we have all history
           if (nextScore === 0) {
+            // Deduplicate cached transactions by txid
+            const txMap = new Map<string, any>();
+            history.forEach((tx: any) => {
+              const existing = txMap.get(tx.txid);
+              if (!existing || tx.score > existing.score) {
+                txMap.set(tx.txid, tx);
+              }
+            });
+            history = Array.from(txMap.values());
+            
             if (options.unconfirmed) {
               const unconfirmedHistory = history.filter((tx: any) => tx.status === 'unconfirmed');
               console.log(JSON.stringify(unconfirmedHistory, null, 2));
@@ -307,6 +317,16 @@ program
       if (attempts >= maxAttempts) {
         console.log('Reached maximum number of attempts. Some history may be missing.');
       }
+
+      // Deduplicate transactions by txid (keep the one with the highest score)
+      const txMap = new Map<string, TxHistory>();
+      history.forEach((tx) => {
+        const existing = txMap.get(tx.txid);
+        if (!existing || tx.score > existing.score) {
+          txMap.set(tx.txid, tx);
+        }
+      });
+      history = Array.from(txMap.values());
 
       writeTxHistoryCache(activeWallet, history, nextScore || 0);
 
