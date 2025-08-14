@@ -21,27 +21,44 @@ npm install -g mnee-cli
 
 ### Linux
 
-First install required system dependencies:
+**Note:** Linux systems are not officially supported at this time due to keychain dependencies. However, users may be able to get it working with the following steps:
 
-**Ubuntu/Debian:**
-```sh
-sudo apt-get install libsecret-1-dev
-npm install -g mnee-cli
-```
+#### Possible Solutions for Linux Users:
 
-**Fedora/RHEL:**
-```sh
-sudo dnf install libsecret-devel
-npm install -g mnee-cli
-```
+1. **Desktop Environment with Keyring Service**
+   
+   The CLI requires a desktop environment with a keyring service (like GNOME Keyring or KDE Wallet) for secure credential storage.
 
-**Arch Linux:**
-```sh
-sudo pacman -S libsecret
-npm install -g mnee-cli
-```
+   **Ubuntu/Debian:**
+   ```sh
+   sudo apt-get install libsecret-1-dev gnome-keyring
+   npm install -g mnee-cli
+   ```
 
-**Note:** Linux systems require `libsecret` for secure credential storage. A desktop environment with a keyring service (like GNOME Keyring) should be running.
+   **Fedora/RHEL:**
+   ```sh
+   sudo dnf install libsecret-devel gnome-keyring
+   npm install -g mnee-cli
+   ```
+
+   **Arch Linux:**
+   ```sh
+   sudo pacman -S libsecret gnome-keyring
+   npm install -g mnee-cli
+   ```
+
+2. **For Headless/Server Environments**
+   
+   If running on a server without a desktop environment, you may need to:
+   - Set up D-Bus: `dbus-launch`
+   - Initialize a keyring daemon manually
+   - Consider using a Docker container with a desktop environment
+
+3. **Alternative Approach**
+   
+   Consider running the CLI on Windows or macOS where it is fully supported, or use WSL2 on Windows with a desktop environment configured.
+
+**Important:** Even with these workarounds, you may encounter issues with credential storage on Linux systems. Full Linux support may be added in future versions.
 
 ## Usage
 
