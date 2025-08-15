@@ -25,7 +25,7 @@ import Mnee, { SendMNEE, TxHistory } from 'mnee';
 import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 
-const apiUrl = 'http://localhost:3000';
+const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
 
 const getMneeInstance = (environment: WalletEnvironment, apiKey?: string): Mnee => {
   return new Mnee({ environment, apiKey });
@@ -120,27 +120,27 @@ program
             if (input.length < 8) {
               return 'Password must be at least 8 characters long';
             }
-            
+
             // Check for at least one uppercase letter
             if (!/[A-Z]/.test(input)) {
               return 'Password must contain at least one uppercase letter';
             }
-            
+
             // Check for at least one lowercase letter
             if (!/[a-z]/.test(input)) {
               return 'Password must contain at least one lowercase letter';
             }
-            
+
             // Check for at least one number
             if (!/[0-9]/.test(input)) {
               return 'Password must contain at least one number';
             }
-            
+
             // Check for at least one special character
             if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(input)) {
               return 'Password must contain at least one special character';
             }
-            
+
             return true;
           },
         },
@@ -280,7 +280,7 @@ program
               }
             });
             history = Array.from(txMap.values());
-            
+
             if (options.unconfirmed) {
               const unconfirmedHistory = history.filter((tx: any) => tx.status === 'unconfirmed');
               console.log(JSON.stringify(unconfirmedHistory, null, 2));
@@ -855,27 +855,27 @@ program
             if (input.length < 8) {
               return 'Password must be at least 8 characters long';
             }
-            
+
             // Check for at least one uppercase letter
             if (!/[A-Z]/.test(input)) {
               return 'Password must contain at least one uppercase letter';
             }
-            
+
             // Check for at least one lowercase letter
             if (!/[a-z]/.test(input)) {
               return 'Password must contain at least one lowercase letter';
             }
-            
+
             // Check for at least one number
             if (!/[0-9]/.test(input)) {
               return 'Password must contain at least one number';
             }
-            
+
             // Check for at least one special character
             if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(input)) {
               return 'Password must contain at least one special character';
             }
-            
+
             return true;
           },
         },

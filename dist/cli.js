@@ -9,7 +9,7 @@ import { getVersion, singleLineLogger } from './utils/helper.js';
 import Mnee from 'mnee';
 import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
-const apiUrl = 'http://localhost:3000';
+const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
 const getMneeInstance = (environment, apiKey) => {
     return new Mnee({ environment, apiKey });
 };
@@ -125,7 +125,6 @@ program
         }
         const encryptedKey = encryptPrivateKey(privateKey.toString(), password);
         const wallets = await getAllWallets();
-        // Deactivate all existing wallets
         wallets.forEach((wallet) => {
             wallet.isActive = false;
         });
