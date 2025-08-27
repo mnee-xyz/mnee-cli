@@ -74,15 +74,17 @@ mnee
 - `mnee create`: Create a new wallet
 - `mnee address`: Get your wallet address
 - `mnee balance`: Check your MNEE balance
-- `mnee transfer`: Transfer MNEE to another address
+- `mnee transfer`: Transfer MNEE to another address (automatically polls for transaction status)
+- `mnee status <ticketId>`: Check the status of a transaction using its ticket ID
 - `mnee export`: Decrypt and retrieve your private key in WIF format
 - `mnee delete <walletName>`: Delete a wallet
 - `mnee list`: List all your wallets and optionally switch to a different wallet
+- `mnee use <walletName>`: Switch to a different wallet
 - `mnee rename <oldName> <newName>`: Rename a wallet
 - `mnee import`: Import an existing wallet using a WIF private key
-- `mnee history`: View transaction history
-  - `-u, --unconfirmed`: Show unconfirmed transactions
-  - `-f, --fresh`: Clear cache and fetch fresh history from the beginning
+- `mnee history`: View transaction history (shows all transactions by default)
+  - `-u, --unconfirmed`: Show only unconfirmed transactions
+  - `-c, --confirmed`: Show only confirmed transactions
 
 ### Authentication & Developer Portal
 - `mnee login`: Authenticate with MNEE Developer Portal
