@@ -7,11 +7,40 @@ import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWalletByAddress, setPrivateKey, deletePrivateKey, getPrivateKey, clearActiveWallet, getLegacyWallet, deleteLegacyWallet, } from './utils/keytar.js';
 import { getVersion, singleLineLogger } from './utils/helper.js';
 import Mnee from 'mnee';
-import { readTxHistoryCache, writeTxHistoryCache, clearTxHistoryCache } from './utils/cache.js';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
 const getMneeInstance = (environment, apiKey) => {
     return new Mnee({ environment, apiKey });
+};
+const getTxStatus = async (mneeInstance, ticketId) => {
+    return await mneeInstance.getTxStatus(ticketId);
+};
+const pollForTxStatus = async (mneeInstance, ticketId, onStatusUpdate) => {
+    const maxAttempts = 60; // 5 minutes with 5 second intervals
+    let attempts = 0;
+    let lastStatus = null;
+    while (attempts < maxAttempts) {
+        try {
+            const status = await getTxStatus(mneeInstance, ticketId);
+            // Call the optional callback with status updates
+            if (onStatusUpdate && status.status !== lastStatus) {
+                onStatusUpdate(status);
+                lastStatus = status.status;
+            }
+            // Return when status is no longer BROADCASTING
+            if (status.status !== 'BROADCASTING') {
+                return status;
+            }
+            // Wait 5 seconds before next poll
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            attempts++;
+        }
+        catch (error) {
+            console.error('Error polling transaction status:', error);
+            throw error;
+        }
+    }
+    throw new Error('Transaction status polling timed out after 5 minutes');
 };
 const safePrompt = async (questions) => {
     try {
@@ -175,15 +204,16 @@ program
         const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
         singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
     }
-    catch {
+    catch (error) {
+        console.error('Error fetching balance:', error);
         singleLineLogger.done('');
     }
 });
 program
     .command('history')
     .description('Get the history of the wallet')
-    .option('-u, --unconfirmed', 'Show unconfirmed transactions')
-    .option('-f, --fresh', 'Clear cache and fetch fresh history from the beginning')
+    .option('-u, --unconfirmed', 'Show only unconfirmed transactions')
+    .option('-c, --confirmed', 'Show only confirmed transactions')
     // TODO: Future enhancement - Add filtering options:
     // - Filter by transaction type (send/receive)
     // - Filter by status (confirmed/unconfirmed)
@@ -204,41 +234,8 @@ program
         let history = [];
         let attempts = 0;
         const maxAttempts = 20; // Safety limit to prevent infinite loops
-        if (options.fresh) {
-            console.log('Fresh mode: Clearing cache and fetching from the beginning...');
-            clearTxHistoryCache(activeWallet);
-        }
-        else {
-            const cachedData = readTxHistoryCache(activeWallet);
-            if (cachedData) {
-                history = cachedData.history;
-                nextScore = cachedData.nextScore;
-                // If nextScore is 0, we have all history
-                if (nextScore === 0) {
-                    // Deduplicate cached transactions by txid
-                    const txMap = new Map();
-                    history.forEach((tx) => {
-                        const existing = txMap.get(tx.txid);
-                        if (!existing || tx.score > existing.score) {
-                            txMap.set(tx.txid, tx);
-                        }
-                    });
-                    history = Array.from(txMap.values());
-                    if (options.unconfirmed) {
-                        const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
-                        console.log(JSON.stringify(unconfirmedHistory, null, 2));
-                        singleLineLogger.done(`\n${unconfirmedHistory.length} unconfirmed transaction${unconfirmedHistory.length !== 1 ? 's' : ''} fetched successfully from cache!\n`);
-                    }
-                    else {
-                        console.log(JSON.stringify(history, null, 2));
-                        singleLineLogger.done(`\n${history.length} transactions fetched successfully from cache!\n`);
-                    }
-                    return;
-                }
-            }
-        }
         while (hasMore && attempts < maxAttempts) {
-            const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100);
+            const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100, 'desc');
             if (newNextScore === nextScore && newNextScore !== undefined)
                 break;
             history.push(...newHistory);
@@ -258,18 +255,25 @@ program
             }
         });
         history = Array.from(txMap.values());
-        writeTxHistoryCache(activeWallet, history, nextScore || 0);
+        // Filter based on options
         if (options.unconfirmed) {
-            const unconfirmedHistory = history.filter((tx) => tx.status === 'unconfirmed');
-            console.log(JSON.stringify(unconfirmedHistory, null, 2));
-            singleLineLogger.done(`\n${unconfirmedHistory.length} unconfirmed transaction${unconfirmedHistory.length !== 1 ? 's' : ''} fetched successfully!\n`);
+            history = history.filter((tx) => tx.status === 'unconfirmed');
+            console.log(JSON.stringify(history, null, 2));
+            singleLineLogger.done(`\n${history.length} unconfirmed transaction${history.length !== 1 ? 's' : ''} fetched successfully!\n`);
+        }
+        else if (options.confirmed) {
+            history = history.filter((tx) => tx.status === 'confirmed');
+            console.log(JSON.stringify(history, null, 2));
+            singleLineLogger.done(`\n${history.length} confirmed transaction${history.length !== 1 ? 's' : ''} fetched successfully!\n`);
         }
         else {
+            // Show all transactions by default
             console.log(JSON.stringify(history, null, 2));
-            singleLineLogger.done(`\n${history.length} transactions fetched successfully!\n`);
+            singleLineLogger.done(`\n${history.length} transaction${history.length !== 1 ? 's' : ''} fetched successfully!\n`);
         }
     }
-    catch {
+    catch (error) {
+        console.error('Error fetching history:', error);
         singleLineLogger.done('');
     }
 });
@@ -341,24 +345,118 @@ program
         singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
         try {
             const mneeInstance = getMneeInstance(activeWallet.environment);
-            const { txid, error } = await mneeInstance.transfer(request, privateKey.toWif());
-            if (!txid) {
-                singleLineLogger.done(`❌ Transfer failed. ${error
-                    ? error.includes('status: 423')
-                        ? 'The sending or receiving address may be frozen or blacklisted. Please visit https://mnee.io and contact support for questions or concerns.'
-                        : 'Please try again.'
-                    : 'Please try again.'}`);
-                return;
+            // Explicitly set broadcast to true to ensure we get a ticketId
+            const response = await mneeInstance.transfer(request, privateKey.toWif());
+            // Check what type of response we got
+            if (response.ticketId) {
+                // We got a ticket ID, poll for status
+                singleLineLogger.done(`\n✅ Transfer initiated. Ticket ID: ${response.ticketId}`);
+                singleLineLogger.start('⏳ Waiting for transaction to be processed...');
+                // Poll for transaction status
+                const finalStatus = await pollForTxStatus(mneeInstance, response.ticketId, (status) => {
+                    switch (status.status) {
+                        case 'BROADCASTING':
+                            singleLineLogger.start('📡 Broadcasting transaction...');
+                            break;
+                        case 'SUCCESS':
+                            singleLineLogger.done('\n✅ Transaction successful!');
+                            break;
+                        case 'MINED':
+                            singleLineLogger.done('\n⛏️ Transaction mined!');
+                            break;
+                        case 'FAILED':
+                            singleLineLogger.done(`\n❌ Transaction failed: ${status.errors || 'Unknown error'}`);
+                            break;
+                    }
+                });
+                if (finalStatus.status === 'SUCCESS' || finalStatus.status === 'MINED') {
+                    console.log(`\nTransaction ID: ${finalStatus.tx_id}`);
+                    console.log(`View on WhatsOnChain: https://whatsonchain.com/tx/${finalStatus.tx_id}?tab=m8eqcrbs\n`);
+                }
+                else if (finalStatus.status === 'FAILED') {
+                    console.error(`\nTransaction failed: ${finalStatus.errors || 'Unknown error'}\n`);
+                }
             }
-            singleLineLogger.done(`\n✅ Transfer successful! TXID:\n${txid}\n`);
+            else if (response.rawtx) {
+                // We got a raw transaction instead (shouldn't happen with broadcast: true)
+                singleLineLogger.done('\n✅ Transaction created.');
+                console.log('\n⚠️  Raw transaction returned instead of ticket ID.');
+                console.log('This might indicate the transaction needs to be submitted manually.');
+                console.log('Raw transaction hex:', response.rawtx.substring(0, 50) + '...\n');
+            }
+            else {
+                // No valid response
+                singleLineLogger.done('❌ Transfer failed. No ticket ID or transaction returned.');
+            }
         }
-        catch {
-            singleLineLogger.done('');
+        catch (error) {
+            console.log(error);
+            singleLineLogger.done(`❌ Transfer failed. ${error && error.message
+                ? error.message.includes('status: 423')
+                    ? 'The sending or receiving address may be frozen or blacklisted. Please visit https://mnee.io and contact support for questions or concerns.'
+                    : 'Please try again.'
+                : 'Please try again.'}`);
+            process.exit(1);
         }
     }
     catch (error) {
         console.log('\n❌ Operation interrupted.');
         process.exit(1);
+    }
+});
+program
+    .command('status')
+    .description('Check the status of a transaction using its ticket ID')
+    .argument('<ticketId>', 'The ticket ID to check status for')
+    .action(async (ticketId) => {
+    try {
+        const activeWallet = await getActiveWallet();
+        if (!activeWallet) {
+            console.error('❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.');
+            return;
+        }
+        singleLineLogger.start(`Checking status for ticket: ${ticketId}...`);
+        try {
+            const mneeInstance = getMneeInstance(activeWallet.environment);
+            const status = await getTxStatus(mneeInstance, ticketId);
+            singleLineLogger.done('');
+            console.log('\n📋 Transaction Status:');
+            console.log('---------------------');
+            console.log(`Ticket ID: ${status.id}`);
+            console.log(`Status: ${status.status}`);
+            if (status.tx_id) {
+                console.log(`Transaction ID: ${status.tx_id}`);
+                console.log(`View on WhatsOnChain: https://whatsonchain.com/tx/${status.tx_id}`);
+            }
+            console.log(`Created: ${new Date(status.createdAt).toLocaleString()}`);
+            console.log(`Updated: ${new Date(status.updatedAt).toLocaleString()}`);
+            if (status.errors) {
+                console.log(`Errors: ${status.errors}`);
+            }
+            // Provide status-specific messages
+            switch (status.status) {
+                case 'BROADCASTING':
+                    console.log('\n⏳ Transaction is being broadcast to the network...');
+                    break;
+                case 'SUCCESS':
+                    console.log('\n✅ Transaction successfully broadcast!');
+                    break;
+                case 'MINED':
+                    console.log('\n⛏️ Transaction has been mined into a block!');
+                    break;
+                case 'FAILED':
+                    console.log('\n❌ Transaction failed.');
+                    break;
+            }
+            console.log('');
+        }
+        catch (error) {
+            singleLineLogger.done('');
+            console.error(`❌ Error checking status: ${error.message || 'Unknown error'}`);
+        }
+    }
+    catch (error) {
+        console.error('\n❌ Error:', error);
     }
 });
 program
@@ -511,10 +609,9 @@ program
         console.log('-------------');
         wallets.forEach((wallet, index) => {
             const activeIndicator = wallet.isActive ? ' (Active) ✅' : '';
-            const truncatedAddress = `${wallet.address.slice(0, 8)}...${wallet.address.slice(-8)}`;
             console.log(`${index + 1}. ${wallet.name}${activeIndicator}`);
             console.log(`   Environment: ${wallet.environment}`);
-            console.log(`   Address: ${truncatedAddress}`);
+            console.log(`   Address: ${wallet.address}`);
             console.log('');
         });
         if (activeWallet) {
