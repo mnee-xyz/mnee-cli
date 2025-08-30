@@ -131,6 +131,17 @@ export const formatAmount = (amount: number | string): string => {
   return chalk.bold.white(`$${formatted} MNEE`);
 };
 
+export const formatLink = (url: string, text?: string): string => {
+  // Use OSC 8 hyperlink escape sequence for clickable links in supporting terminals
+  // Format: \x1b]8;;URL\x07TEXT\x1b]8;;\x07
+  const displayText = text || url;
+  const clickableLink = `\x1b]8;;${url}\x07${chalk.cyan.underline(displayText)}\x1b]8;;\x07`;
+  
+  // Fallback for terminals that don't support OSC 8
+  // They will just see the underlined cyan text
+  return clickableLink;
+};
+
 export const formatTransaction = (type: 'send' | 'receive', amount: string, address: string): string => {
   const icon = type === 'send' ? icons.send : icons.receive;
   const color = type === 'send' ? colors.error : colors.success;
@@ -202,6 +213,89 @@ export const showTransactionAnimation = async (showComplete: boolean = false) =>
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   process.stdout.write('\r' + ' '.repeat(50) + '\r');
+};
+
+export const startTransactionAnimation = () => {
+  const frames = [
+    '📡 Broadcasting...',
+    '📡 ▶ Broadcasting...',
+    '📡 ▶▶ Broadcasting...',
+    '📡 ▶▶▶ Broadcasting...',
+    '📡 ▶▶▶▶ Broadcasting...',
+    '📡 ▶▶▶▶▶ Broadcasting...',
+  ];
+
+  let i = 0;
+  const interval = setInterval(() => {
+    process.stdout.write(`\r${colors.primary(frames[i])}`);
+    i = (i + 1) % frames.length;
+  }, 200);
+
+  return {
+    stop: (showComplete: boolean = false) => {
+      clearInterval(interval);
+      if (showComplete) {
+        process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Complete!')}`);
+        setTimeout(() => {
+          process.stdout.write('\r' + ' '.repeat(50) + '\r');
+        }, 1000);
+      } else {
+        process.stdout.write('\r' + ' '.repeat(50) + '\r');
+      }
+    }
+  };
+};
+
+export const showAirdropAnimation = async (showComplete: boolean = false) => {
+  const frames = [
+    '🪂 Requesting airdrop...',
+    '🪂 ▶ Requesting airdrop...',
+    '🪂 ▶▶ Requesting airdrop...',
+    '🪂 ▶▶▶ Requesting airdrop...',
+    '🪂 ▶▶▶▶ Requesting airdrop...',
+    '🪂 ▶▶▶▶▶ Requesting airdrop...',
+  ];
+
+  if (showComplete) {
+    frames.push('✅ ▶▶▶▶▶▶ Airdrop complete!');
+  }
+
+  for (const frame of frames) {
+    process.stdout.write(`\r${colors.primary(frame)}`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  process.stdout.write('\r' + ' '.repeat(50) + '\r');
+};
+
+export const startAirdropAnimation = () => {
+  const frames = [
+    '🪂 Requesting airdrop...',
+    '🪂 ▶ Requesting airdrop...',
+    '🪂 ▶▶ Requesting airdrop...',
+    '🪂 ▶▶▶ Requesting airdrop...',
+    '🪂 ▶▶▶▶ Requesting airdrop...',
+    '🪂 ▶▶▶▶▶ Requesting airdrop...',
+  ];
+
+  let i = 0;
+  const interval = setInterval(() => {
+    process.stdout.write(`\r${colors.primary(frames[i])}`);
+    i = (i + 1) % frames.length;
+  }, 200);
+
+  return {
+    stop: (showComplete: boolean = false) => {
+      clearInterval(interval);
+      if (showComplete) {
+        process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Airdrop complete!')}`);
+        setTimeout(() => {
+          process.stdout.write('\r' + ' '.repeat(50) + '\r');
+        }, 1000);
+      } else {
+        process.stdout.write('\r' + ' '.repeat(50) + '\r');
+      }
+    }
+  };
 };
 
 export const table = (data: any[], columns: string[]) => {

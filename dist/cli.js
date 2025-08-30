@@ -6,10 +6,10 @@ import { PrivateKey, Utils } from '@bsv/sdk';
 import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWalletByAddress, setPrivateKey, deletePrivateKey, getPrivateKey, clearActiveWallet, getLegacyWallet, deleteLegacyWallet, } from './utils/keytar.js';
 import { getVersion } from './utils/helper.js';
-import { colors, icons, createSpinner, showBox, formatAddress, formatAmount, showWelcome, animateSuccess, showTransactionAnimation, table, } from './utils/ui.js';
+import { colors, icons, createSpinner, showBox, formatAddress, formatAmount, formatLink, showWelcome, animateSuccess, startTransactionAnimation, startAirdropAnimation, table, } from './utils/ui.js';
 import Mnee from 'mnee';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
-const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
+const apiUrl = 'https://api-stg-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
 const getMneeInstance = (environment, apiKey) => {
     return new Mnee({ environment, apiKey });
 };
@@ -55,6 +55,7 @@ const safePrompt = async (questions) => {
 const program = new Command();
 if (!process.argv.slice(2).length) {
     await showWelcome();
+    process.exit(0); // Exit after showing welcome, don't show help
 }
 program
     .name('mnee')
@@ -81,21 +82,34 @@ program.exitOverride((err) => {
 program
     .command('create')
     .description('Generate a new wallet and store keys securely')
-    .action(async () => {
+    .option('-s, --sandbox', 'Create a sandbox wallet')
+    .option('-p, --production', 'Create a production wallet')
+    .action(async (options) => {
     try {
         const existingWallets = await getAllWallets();
-        const { environment } = await safePrompt([
-            {
-                type: 'list',
-                name: 'environment',
-                message: 'Select wallet environment:',
-                choices: [
-                    { name: 'Production', value: 'production' },
-                    { name: 'Sandbox', value: 'sandbox' },
-                ],
-                default: 'production',
-            },
-        ]);
+        // Determine environment from options or prompt
+        let environment;
+        if (options.sandbox) {
+            environment = 'sandbox';
+        }
+        else if (options.production) {
+            environment = 'production';
+        }
+        else {
+            const result = await safePrompt([
+                {
+                    type: 'list',
+                    name: 'environment',
+                    message: 'Select wallet environment:',
+                    choices: [
+                        { name: 'Production', value: 'production' },
+                        { name: 'Sandbox', value: 'sandbox' },
+                    ],
+                    default: 'production',
+                },
+            ]);
+            environment = result.environment;
+        }
         const { walletName } = await safePrompt([
             {
                 type: 'input',
@@ -196,7 +210,9 @@ program
     }
     showBox(`${icons.wallet} ${colors.highlight('Active Wallet')}\n\n` +
         `${icons.dot} Name: ${colors.primary(activeWallet.name)}\n` +
-        `${icons.dot} Environment: ${activeWallet.environment === 'production' ? colors.success(activeWallet.environment) : colors.warning(activeWallet.environment)}\n` +
+        `${icons.dot} Environment: ${activeWallet.environment === 'production'
+            ? colors.success(activeWallet.environment)
+            : colors.warning(activeWallet.environment)}\n` +
         `${icons.dot} Address: ${colors.muted(activeWallet.address)}`, 'Wallet Address', 'info');
 });
 program
@@ -291,7 +307,7 @@ program
         }
         // Filter by counterparty address
         if (options.address) {
-            history = history.filter((tx) => tx.counterparties?.some(cp => cp.address.toLowerCase().includes(options.address.toLowerCase())));
+            history = history.filter((tx) => tx.counterparties?.some((cp) => cp.address.toLowerCase().includes(options.address.toLowerCase())));
         }
         // Filter by amount range
         if (options.min !== undefined || options.max !== undefined) {
@@ -331,7 +347,7 @@ program
                 const fee = mneeInstance.fromAtomicAmount(tx.fee || 0);
                 // Status indicator
                 const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
-                const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('pending');
+                const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('unconfirmed');
                 // Block height
                 const heightDisplay = tx.height ? `block ${tx.height}` : '';
                 // Format the main transaction line
@@ -483,46 +499,27 @@ program
             if (response.ticketId) {
                 // We got a ticket ID, poll for status
                 spinner.stop();
-                // Start the transaction animation loop
-                let statusReceived = false;
-                const startAnimation = async () => {
-                    // Show initial message
-                    process.stdout.write(`\r${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(`Ticket: ${response.ticketId}`)}`);
-                    await new Promise((resolve) => setTimeout(resolve, 1500));
-                    while (!statusReceived) {
-                        await showTransactionAnimation();
-                        if (!statusReceived) {
-                            await new Promise((resolve) => setTimeout(resolve, 500));
-                        }
-                    }
-                };
-                // Start animation in background
-                const animationPromise = startAnimation();
+                // Show initial success message
+                console.log(`${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(`Ticket: ${response.ticketId}`)}`);
+                // Start looping transaction animation
+                const txAnim = startTransactionAnimation();
                 // Poll for transaction status
-                const finalStatus = await pollForTxStatus(mneeInstance, response.ticketId, (status) => {
-                    // We'll handle the final status display, just track state changes
-                    if (status.status !== 'BROADCASTING') {
-                        statusReceived = true;
-                    }
-                });
-                // Stop animation
-                statusReceived = true;
-                await animationPromise;
-                process.stdout.write('\r' + ' '.repeat(50) + '\r');
+                const finalStatus = await pollForTxStatus(mneeInstance, response.ticketId);
                 if (finalStatus.status === 'SUCCESS' || finalStatus.status === 'MINED') {
-                    // Show the complete animation
-                    await showTransactionAnimation(true);
-                    animateSuccess('Transfer complete!');
+                    // Stop animation with success
+                    txAnim.stop(true);
                     setTimeout(() => {
                         showBox(`${icons.check} ${colors.highlight('Transaction Details')}\n\n` +
                             `${icons.dot} Amount: ${formatAmount(transferAmount)}\n` +
-                            `${icons.dot} To: ${colors.info(formatAddress(toAddress))}\n` +
+                            `${icons.dot} To: ${colors.muted(formatAddress(toAddress))}\n` +
                             `${icons.dot} TX ID: ${colors.muted(finalStatus.tx_id)}\n\n` +
-                            `${colors.primary('View on WhatsOnChain:')}\n` +
-                            `${colors.info(`https://whatsonchain.com/tx/${finalStatus.tx_id}?tab=m8eqcrbs`)}`, 'Transfer Success', 'success');
+                            `View on WhatsOnChain:\n` +
+                            formatLink(`https://whatsonchain.com/tx/${finalStatus.tx_id}?tab=m8eqcrbs`), 'Transfer Success', 'success');
                     }, 1200);
                 }
                 else if (finalStatus.status === 'FAILED') {
+                    // Stop animation without success
+                    txAnim.stop(false);
                     showBox(`${icons.error} ${colors.error('Transaction failed')}\n\n` + `${finalStatus.errors || 'Unknown error'}`, 'Transfer Failed', 'error');
                 }
             }
@@ -582,11 +579,11 @@ program
                 FAILED: icons.error,
             }[status.status] || icons.info;
             let content = `${statusIcon} ${colors.highlight('Transaction Status')}\n\n` +
-                `${icons.dot} Ticket ID: ${colors.info(status.id)}\n` +
+                `${icons.dot} Ticket ID: ${colors.muted(status.id)}\n` +
                 `${icons.dot} Status: ${statusColor(status.status)}\n`;
             if (status.tx_id) {
-                content += `${icons.dot} TX ID: ${colors.info(status.tx_id)}\n`;
-                content += `${icons.dot} ${colors.primary('View:')} ${colors.info(`https://whatsonchain.com/tx/${status.tx_id}?tab=m8eqcrbs`)}\n`;
+                content += `${icons.dot} TX ID: ${colors.muted(status.tx_id)}\n\n`;
+                content += `View on WhatsOnChain:\n${formatLink(`https://whatsonchain.com/tx/${status.tx_id}?tab=m8eqcrbs`)}\n`;
             }
             content += `\n${icons.dot} Created: ${colors.muted(new Date(status.createdAt).toLocaleString())}\n`;
             content += `${icons.dot} Updated: ${colors.muted(new Date(status.updatedAt).toLocaleString())}`;
@@ -648,11 +645,13 @@ program
         const wif = privateKey.toWif();
         showBox(`${icons.key} ${colors.highlight('Private Key Export')}\n\n` +
             `${icons.wallet} Wallet: ${colors.primary(activeWallet.name)}\n` +
-            `${icons.dot} Environment: ${activeWallet.environment === 'production' ? colors.success(activeWallet.environment) : colors.warning(activeWallet.environment)}\n` +
+            `${icons.dot} Environment: ${activeWallet.environment === 'production'
+                ? colors.success(activeWallet.environment)
+                : colors.warning(activeWallet.environment)}\n` +
             `${icons.dot} Address: ${colors.muted(activeWallet.address)}\n\n` +
             `${icons.lock} ${colors.warning('WIF Private Key:')}\n` +
             `${colors.muted(wif)}\n\n` +
-            `${icons.warning} ${colors.error('KEEP THIS KEY SAFE!')}\n` +
+            `${icons.warning} ${colors.error(' KEEP THIS KEY SAFE!')}\n` +
             `${colors.error('Never share it with anyone!')}`, 'Private Key', 'warning');
     }
     catch (error) {
@@ -827,7 +826,9 @@ program
                 await setActiveWallet(wallet);
                 animateSuccess(`Switched to wallet: ${wallet.name}`);
                 setTimeout(() => {
-                    console.log(`${icons.dot} Environment: ${wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment)}`);
+                    console.log(`${icons.dot} Environment: ${wallet.environment === 'production'
+                        ? colors.success(wallet.environment)
+                        : colors.warning(wallet.environment)}`);
                     console.log(`${icons.dot} Address: ${colors.muted(wallet.address)}`);
                 }, 1200);
             }
@@ -864,8 +865,10 @@ program
         await setActiveWallet(wallet);
         animateSuccess(`Switched to wallet: ${wallet.name}`);
         setTimeout(() => {
-            console.log(`${icons.dot} Environment: ${colors.info(wallet.environment)}`);
-            console.log(`${icons.dot} Address: ${colors.info(wallet.address)}`);
+            console.log(`${icons.dot} Environment: ${wallet.environment === 'production'
+                ? colors.success(wallet.environment)
+                : colors.warning(wallet.environment)}`);
+            console.log(`${icons.dot} Address: ${colors.muted(wallet.address)}`);
         }, 1200);
     }
     catch (error) {
@@ -1156,8 +1159,8 @@ program
             console.log('Production tokens must be purchased.');
             return;
         }
-        const spinner = createSpinner('Requesting sandbox tokens...');
-        spinner.start();
+        // Start looping airdrop animation
+        const airdropAnim = startAirdropAnimation();
         const response = await fetch(`${apiUrl}/faucet/cli`, {
             method: 'POST',
             headers: {
@@ -1168,16 +1171,17 @@ program
         });
         const result = (await response.json());
         if (result.success) {
-            spinner.succeed('Faucet request successful!');
-            showBox(`${icons.money} ${colors.highlight('Tokens Sent!')}\n\n` +
+            airdropAnim.stop(true); // Stop with completion message
+            showBox(`${icons.money} ${colors.highlight('Tokens Received!')}\n\n` +
                 `${icons.dot} Amount: ${formatAmount(result.amount || 10)}\n` +
-                `${icons.dot} To: ${colors.info(formatAddress(depositAddress))}\n` +
+                `${icons.dot} To: ${colors.muted(formatAddress(depositAddress))}\n` +
                 `${icons.dot} TX ID: ${colors.muted(result.txid)}\n\n` +
-                `${colors.primary('View on WhatsOnChain:')}\n` +
-                `${colors.info(`https://whatsonchain.com/tx/${result.txid}?tab=m8eqcrbs`)}`, 'Faucet Success', 'success');
+                `View on WhatsOnChain:\n` +
+                formatLink(`https://whatsonchain.com/tx/${result.txid}?tab=m8eqcrbs`), 'Faucet Success', 'success');
         }
         else {
-            spinner.fail(result.message || 'Failed to request tokens');
+            airdropAnim.stop(false); // Stop without completion
+            console.error(`${icons.error} ${colors.error(result.message || 'Failed to request tokens')}`);
         }
     }
     catch (error) {
