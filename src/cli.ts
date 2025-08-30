@@ -3,7 +3,7 @@
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import crypto from 'crypto';
-import { PrivateKey } from '@bsv/sdk';
+import { PrivateKey, Utils } from '@bsv/sdk';
 import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import {
   getActiveWallet,
@@ -21,6 +21,18 @@ import {
   deleteLegacyWallet,
 } from './utils/keytar.js';
 import { getVersion, singleLineLogger } from './utils/helper.js';
+import {
+  colors,
+  icons,
+  createSpinner,
+  showBox,
+  formatAddress,
+  formatAmount,
+  showWelcome,
+  animateSuccess,
+  showTransactionAnimation,
+  table,
+} from './utils/ui.js';
 import Mnee, { SendMNEE, TxHistory, TransferStatus } from 'mnee';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 
@@ -74,27 +86,34 @@ const safePrompt = async (questions: any) => {
   try {
     return await inquirer.prompt(questions);
   } catch {
-    console.log('\n❌ Operation cancelled by user.');
+    console.log(`\n${icons.error} ${colors.error('Operation cancelled by user.')}`);
     process.exit(1);
   }
 };
 
 const program = new Command();
 if (!process.argv.slice(2).length) {
-  console.log(` __       __  __    __  ________  ________         ______   __        ______ 
-/  \\     /  |/  \\  /  |/        |/        |       /      \\ /  |      /      |
-$$  \\   /$$ |$$  \\ $$ |$$$$$$$$/ $$$$$$$$/       /$$$$$$  |$$ |      $$$$$$/ 
-$$$  \\ /$$$ |$$$  \\$$ |$$ |__    $$ |__          $$ |  $$/ $$ |        $$ |  
-$$$$  /$$$$ |$$$$  $$ |$$    |   $$    |         $$ |      $$ |        $$ |  
-$$ $$ $$/$$ |$$ $$ $$ |$$$$$/    $$$$$/          $$ |   __ $$ |        $$ |  
-$$ |$$$/ $$ |$$ |$$$$ |$$ |_____ $$ |_____       $$ \\__/  |$$ |_____  _$$ |_ 
-$$ | $/  $$ |$$ | $$$ |$$       |$$       |      $$    $$/ $$       |/ $$   |
-$$/      $$/ $$/   $$/ $$$$$$$$/ $$$$$$$$/        $$$$$$/  $$$$$$$$/ $$$$$$/
-
-`);
+  await showWelcome();
 }
 
-program.name('mnee').description('CLI for interacting with MNEE tokens').version(getVersion());
+program
+  .name('mnee')
+  .description(colors.muted('CLI for interacting with MNEE tokens'))
+  .version(getVersion())
+  .configureHelp({
+    sortSubcommands: true,
+    subcommandTerm: (cmd) => cmd.name() + ' ' + cmd.usage(),
+  })
+  .addHelpText('before', `\n${colors.highlight('MNEE CLI')} ${colors.muted(`v${getVersion()}`)}\n`)
+  .addHelpText(
+    'after',
+    `\n${colors.muted('Examples:')}\n` +
+      `  ${colors.primary('mnee create')}              ${colors.muted('# Create a new wallet')}\n` +
+      `  ${colors.primary('mnee balance')}             ${colors.muted('# Check wallet balance')}\n` +
+      `  ${colors.primary('mnee transfer 10 1A...')}   ${colors.muted('# Quick transfer')}\n` +
+      `  ${colors.primary('mnee list')}                ${colors.muted('# List all wallets')}\n\n` +
+      `${colors.muted('For more help:')} ${colors.primary('mnee <command> --help')}\n`,
+  );
 
 // Add error handling for the main program
 program.exitOverride((err) => {
@@ -216,13 +235,21 @@ program
       await setPrivateKey(address, encryptedKey);
       await setActiveWallet(newWallet);
 
-      console.log('\n✅ Wallet created successfully!');
-      console.log(`\nName: ${walletName}`);
-      console.log(`Environment: ${environment}`);
-      console.log(`Address: ${address}\n`);
-      console.log('This wallet is now your active wallet.');
+      animateSuccess('Wallet created successfully!');
+
+      setTimeout(() => {
+        showBox(
+          `${icons.wallet} ${colors.highlight('Wallet Details')}\n\n` +
+            `${icons.dot} Name: ${colors.primary(walletName)}\n` +
+            `${icons.dot} Environment: ${environment === 'production' ? colors.success(environment) : colors.warning(environment)}\n` +
+            `${icons.dot} Address: ${colors.muted(address)}\n\n` +
+            `${icons.check} ${colors.success('This wallet is now active')}`,
+          'New Wallet Created',
+          'success',
+        );
+      }, 1200);
     } catch (error) {
-      console.error('\n❌ Error creating wallet:', error);
+      console.error(`\n${icons.error} ${colors.error('Error creating wallet:')}`, error);
     }
   });
 
@@ -234,13 +261,21 @@ program
 
     if (!activeWallet) {
       console.error(
-        '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+        `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+          'mnee create',
+        )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
       );
       return;
     }
 
-    console.log(`\nActive Wallet: ${activeWallet.name} (${activeWallet.environment})`);
-    console.log(`Address: ${activeWallet.address}\n`);
+    showBox(
+      `${icons.wallet} ${colors.highlight('Active Wallet')}\n\n` +
+        `${icons.dot} Name: ${colors.primary(activeWallet.name)}\n` +
+        `${icons.dot} Environment: ${activeWallet.environment === 'production' ? colors.success(activeWallet.environment) : colors.warning(activeWallet.environment)}\n` +
+        `${icons.dot} Address: ${colors.muted(activeWallet.address)}`,
+      'Wallet Address',
+      'info',
+    );
   });
 
 program
@@ -251,46 +286,65 @@ program
 
     if (!activeWallet) {
       console.error(
-        '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+        `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+          'mnee create',
+        )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
       );
       return;
     }
 
-    singleLineLogger.start(`Fetching balance for ${activeWallet.name} (${activeWallet.environment})...`);
+    const spinner = createSpinner(
+      `Fetching balance for ${colors.primary(activeWallet.name)} (${activeWallet.environment})...`,
+    );
+    spinner.start();
 
     try {
       const mneeInstance = getMneeInstance(activeWallet.environment);
       const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
 
-      singleLineLogger.done(`\n$${decimalAmount} MNEE\n`);
+      spinner.succeed(`Balance retrieved!`);
+
+      showBox(
+        `${icons.money} ${colors.highlight('Wallet Balance')}\n\n` +
+          `${formatAmount(decimalAmount)}\n\n` +
+          `${icons.wallet} ${colors.muted(activeWallet.name)}\n` +
+          `${icons.arrow} ${colors.muted(formatAddress(activeWallet.address))}`,
+        'Balance',
+        'success',
+      );
     } catch (error) {
-      console.error('Error fetching balance:', error);
-      singleLineLogger.done('');
+      spinner.fail(colors.error('Error fetching balance'));
+      console.error(error);
     }
   });
 
 program
   .command('history')
-  .description('Get the history of the wallet')
+  .description('Get transaction history with filtering options')
   .option('-u, --unconfirmed', 'Show only unconfirmed transactions')
   .option('-c, --confirmed', 'Show only confirmed transactions')
-  // TODO: Future enhancement - Add filtering options:
-  // - Filter by transaction type (send/receive)
-  // - Filter by status (confirmed/unconfirmed)
-  // - Filter by transaction ID
-  // - Filter by counterparty address
-  // - Filter by amount range
+  .option('-l, --limit <number>', 'Show only the N most recent transactions (e.g., -l 10)', parseInt)
+  .option('-t, --type <type>', 'Filter by type: "send" or "receive"')
+  .option('--txid <txid>', 'Search by transaction ID (partial match)')
+  .option('--address <address>', 'Filter by counterparty address (partial match)')
+  .option('--min <amount>', 'Show transactions >= amount (e.g., --min 0.5)', parseFloat)
+  .option('--max <amount>', 'Show transactions <= amount (e.g., --max 100)', parseFloat)
   .action(async (options) => {
     const activeWallet = await getActiveWallet();
 
     if (!activeWallet) {
       console.error(
-        '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+        `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+          'mnee create',
+        )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
       );
       return;
     }
 
-    singleLineLogger.start(`Fetching history for ${activeWallet.name} (${activeWallet.environment})...`);
+    const spinner = createSpinner(
+      `Fetching history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})...`,
+    );
+    spinner.start();
 
     try {
       const mneeInstance = getMneeInstance(activeWallet.environment);
@@ -330,86 +384,236 @@ program
       });
       history = Array.from(txMap.values());
 
-      // Filter based on options
+      // Apply filters based on options
       if (options.unconfirmed) {
         history = history.filter((tx) => tx.status === 'unconfirmed');
-        console.log(JSON.stringify(history, null, 2));
-        singleLineLogger.done(
-          `\n${history.length} unconfirmed transaction${history.length !== 1 ? 's' : ''} fetched successfully!\n`,
-        );
       } else if (options.confirmed) {
         history = history.filter((tx) => tx.status === 'confirmed');
-        console.log(JSON.stringify(history, null, 2));
-        singleLineLogger.done(
-          `\n${history.length} confirmed transaction${history.length !== 1 ? 's' : ''} fetched successfully!\n`,
-        );
-      } else {
-        // Show all transactions by default
-        console.log(JSON.stringify(history, null, 2));
-        singleLineLogger.done(
-          `\n${history.length} transaction${history.length !== 1 ? 's' : ''} fetched successfully!\n`,
+      }
+
+      // Filter by transaction type
+      if (options.type) {
+        const type = options.type.toLowerCase();
+        if (type === 'send' || type === 'receive') {
+          history = history.filter((tx) => tx.type === type);
+        }
+      }
+
+      // Filter by transaction ID (partial match)
+      if (options.txid) {
+        history = history.filter((tx) => 
+          tx.txid.toLowerCase().includes(options.txid.toLowerCase())
         );
       }
+
+      // Filter by counterparty address
+      if (options.address) {
+        history = history.filter((tx) => 
+          tx.counterparties?.some(cp => 
+            cp.address.toLowerCase().includes(options.address.toLowerCase())
+          )
+        );
+      }
+
+      // Filter by amount range
+      if (options.min !== undefined || options.max !== undefined) {
+        history = history.filter((tx) => {
+          const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
+          if (options.min !== undefined && amount < options.min) return false;
+          if (options.max !== undefined && amount > options.max) return false;
+          return true;
+        });
+      }
+
+      // Apply limit if specified
+      if (options.limit && options.limit > 0) {
+        history = history.slice(0, options.limit);
+      }
+
+      spinner.stop();
+
+      // Display formatted history
+      if (history.length === 0) {
+        showBox(
+          `${icons.info} No transactions found`,
+          'Transaction History',
+          'info',
+        );
+      } else {
+        // Sort transactions by score (newest first)
+        history.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+        console.log('');
+        console.log(colors.highlight(`${icons.time} Transaction History`));
+        console.log(colors.muted('─'.repeat(60)));
+        console.log('');
+
+        // Display transactions
+        history.forEach((tx, index) => {
+          // Transaction type and styling
+          const type = tx.type || 'unknown';
+          const icon = type === 'send' ? icons.send : type === 'receive' ? icons.receive : icons.dot;
+          const color = type === 'send' ? colors.error : type === 'receive' ? colors.success : colors.muted;
+          
+          // Convert amount and fee from atomic units
+          const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
+          const fee = mneeInstance.fromAtomicAmount(tx.fee || 0);
+
+          // Status indicator
+          const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
+          const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('pending');
+
+          // Block height
+          const heightDisplay = tx.height ? `block ${tx.height}` : '';
+
+          // Format the main transaction line
+          console.log(
+            `  ${icon} ${color(type.toUpperCase().padEnd(8))} ${formatAmount(amount).padEnd(22)} ${statusIcon} ${statusText}`
+          );
+
+          // Show fee if it exists
+          if (fee > 0) {
+            console.log(
+              `     ${colors.muted('fee:')} ${formatAmount(fee)}`
+            );
+          }
+
+          // Show all counterparties
+          if (tx.counterparties && tx.counterparties.length > 0) {
+            tx.counterparties.forEach((cp) => {
+              const cpAmount = mneeInstance.fromAtomicAmount(cp.amount || 0);
+              console.log(
+                `     ${colors.muted(type === 'send' ? 'to:' : 'from:')} ${colors.muted(cp.address)} ${formatAmount(cpAmount)}`
+              );
+            });
+          }
+
+          // Show block height
+          if (heightDisplay) {
+            console.log(
+              `     ${colors.muted(heightDisplay)}`
+            );
+          }
+
+          // Show transaction ID
+          console.log(
+            `     ${colors.muted(`tx: ${tx.txid}`)}`
+          );
+          
+          // Add separator between transactions (except for the last one)
+          if (index < history.length - 1) {
+            console.log(colors.muted('     ' + '·'.repeat(50)));
+          }
+          console.log('');
+        });
+
+        console.log(colors.muted('─'.repeat(60)));
+        console.log(
+          colors.muted(`  Total: ${history.length} transaction${history.length !== 1 ? 's' : ''}`)
+        );
+        console.log('');
+      }
     } catch (error) {
-      console.error('Error fetching history:', error);
-      singleLineLogger.done('');
+      spinner.fail(colors.error('Error fetching history'));
+      console.error(error);
     }
   });
 
 program
-  .command('transfer')
+  .command('transfer [amount] [address]')
   .description('Transfer MNEE to another address')
-  .action(async () => {
+  .action(async (amount?: string, address?: string) => {
     try {
       const activeWallet = await getActiveWallet();
 
       if (!activeWallet) {
         console.error(
-          '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+          `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+            'mnee create',
+          )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
         );
         return;
       }
 
-      const { amount, toAddress } = await safePrompt([
-        {
-          type: 'input',
-          name: 'amount',
-          message: 'Enter the amount to transfer:',
-          validate: (input: string) => {
-            // Check if the input is a valid number format
-            const trimmed = input.trim();
-            if (!trimmed) {
-              return 'Amount is required';
-            }
+      // Validate amount if provided as argument
+      if (amount) {
+        const validateAmount = (input: string) => {
+          const trimmed = input.trim();
+          if (!trimmed) return 'Amount is required';
 
-            // Regex to match valid decimal numbers (including scientific notation)
-            const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
-            if (!validNumberRegex.test(trimmed)) {
-              return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
-            }
+          const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+          if (!validNumberRegex.test(trimmed)) {
+            return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
+          }
 
-            const num = parseFloat(trimmed);
-            if (isNaN(num)) {
-              return 'Invalid amount. Please enter a valid number';
-            }
+          const num = parseFloat(trimmed);
+          if (isNaN(num)) return 'Invalid amount. Please enter a valid number';
+          if (num <= 0) return 'Amount must be greater than 0';
+          if (num < 0.00001) return 'Amount must be at least 0.00001 MNEE';
 
-            if (num <= 0) {
-              return 'Amount must be greater than 0';
-            }
+          return true;
+        };
 
-            if (num < 0.00001) {
-              return 'Amount must be at least 0.00001 MNEE';
-            }
+        const validation = validateAmount(amount);
+        if (validation !== true) {
+          console.error(`${icons.error} ${colors.error(validation)}`);
+          return;
+        }
+      }
 
-            return true;
-          },
-        },
-        {
-          type: 'input',
-          name: 'toAddress',
-          message: "Enter the recipient's address:",
-        },
-      ]);
+      // Validate address if provided as argument
+      if (address) {
+        const validation = validateBSVAddress(address);
+        if (validation !== true) {
+          console.error(`${icons.error} ${colors.error(validation)}`);
+          return;
+        }
+      }
+
+      // Prompt for amount and/or address if not provided
+      let transferAmount = amount;
+      let toAddress = address;
+
+      if (!amount || !address) {
+        const prompts = [];
+
+        if (!amount) {
+          prompts.push({
+            type: 'input',
+            name: 'amount',
+            message: 'Enter the amount to transfer:',
+            validate: (input: string) => {
+              const trimmed = input.trim();
+              if (!trimmed) return 'Amount is required';
+
+              const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+              if (!validNumberRegex.test(trimmed)) {
+                return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
+              }
+
+              const num = parseFloat(trimmed);
+              if (isNaN(num)) return 'Invalid amount. Please enter a valid number';
+              if (num <= 0) return 'Amount must be greater than 0';
+              if (num < 0.00001) return 'Amount must be at least 0.00001 MNEE';
+
+              return true;
+            },
+          });
+        }
+
+        if (!address) {
+          prompts.push({
+            type: 'input',
+            name: 'toAddress',
+            message: "Enter the recipient's address:",
+            validate: validateBSVAddress,
+          });
+        }
+
+        const answers = await safePrompt(prompts);
+        transferAmount = amount || answers.amount;
+        toAddress = address || answers.toAddress;
+      }
 
       const { password } = await safePrompt([
         {
@@ -433,9 +637,10 @@ program
       }
 
       const privateKey = PrivateKey.fromString(privateKeyHex);
-      const request = [{ address: toAddress, amount: parseFloat(amount) }] as SendMNEE[];
+      const request = [{ address: toAddress!, amount: parseFloat(transferAmount!) }] as SendMNEE[];
 
-      singleLineLogger.start(`Transferring MNEE from ${activeWallet.name} (${activeWallet.environment})...`);
+      const spinner = createSpinner(`${icons.send} Initiating transfer from ${colors.primary(activeWallet.name)}...`);
+      spinner.start();
 
       try {
         const mneeInstance = getMneeInstance(activeWallet.environment);
@@ -445,47 +650,86 @@ program
         // Check what type of response we got
         if (response.ticketId) {
           // We got a ticket ID, poll for status
-          singleLineLogger.done(`\n✅ Transfer initiated. Ticket ID: ${response.ticketId}`);
-          singleLineLogger.start('⏳ Waiting for transaction to be processed...');
+          spinner.stop();
+
+          // Start the transaction animation loop
+          let statusReceived = false;
+
+          const startAnimation = async () => {
+            // Show initial message
+            process.stdout.write(
+              `\r${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(
+                `Ticket: ${response.ticketId}`,
+              )}`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+
+            while (!statusReceived) {
+              await showTransactionAnimation();
+              if (!statusReceived) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+              }
+            }
+          };
+
+          // Start animation in background
+          const animationPromise = startAnimation();
 
           // Poll for transaction status
           const finalStatus = await pollForTxStatus(mneeInstance, response.ticketId, (status) => {
-            switch (status.status) {
-              case 'BROADCASTING':
-                singleLineLogger.start('📡 Broadcasting transaction...');
-                break;
-              case 'SUCCESS':
-                singleLineLogger.done('\n✅ Transaction successful!');
-                break;
-              case 'MINED':
-                singleLineLogger.done('\n⛏️ Transaction mined!');
-                break;
-              case 'FAILED':
-                singleLineLogger.done(`\n❌ Transaction failed: ${status.errors || 'Unknown error'}`);
-                break;
+            // We'll handle the final status display, just track state changes
+            if (status.status !== 'BROADCASTING') {
+              statusReceived = true;
             }
           });
 
+          // Stop animation
+          statusReceived = true;
+          await animationPromise;
+          process.stdout.write('\r' + ' '.repeat(50) + '\r');
+
           if (finalStatus.status === 'SUCCESS' || finalStatus.status === 'MINED') {
-            console.log(`\nTransaction ID: ${finalStatus.tx_id}`);
-            console.log(`View on WhatsOnChain: https://whatsonchain.com/tx/${finalStatus.tx_id}?tab=m8eqcrbs\n`);
+            // Show the complete animation
+            await showTransactionAnimation(true);
+            animateSuccess('Transfer complete!');
+
+            setTimeout(() => {
+              showBox(
+                `${icons.check} ${colors.highlight('Transaction Details')}\n\n` +
+                  `${icons.dot} Amount: ${formatAmount(transferAmount!)}\n` +
+                  `${icons.dot} To: ${colors.info(formatAddress(toAddress!))}\n` +
+                  `${icons.dot} TX ID: ${colors.muted(finalStatus.tx_id)}\n\n` +
+                  `${colors.primary('View on WhatsOnChain:')}\n` +
+                  `${colors.info(`https://whatsonchain.com/tx/${finalStatus.tx_id}?tab=m8eqcrbs`)}`,
+                'Transfer Success',
+                'success',
+              );
+            }, 1200);
           } else if (finalStatus.status === 'FAILED') {
-            console.error(`\nTransaction failed: ${finalStatus.errors || 'Unknown error'}\n`);
+            showBox(
+              `${icons.error} ${colors.error('Transaction failed')}\n\n` + `${finalStatus.errors || 'Unknown error'}`,
+              'Transfer Failed',
+              'error',
+            );
           }
         } else if (response.rawtx) {
           // We got a raw transaction instead (shouldn't happen with broadcast: true)
-          singleLineLogger.done('\n✅ Transaction created.');
-          console.log('\n⚠️  Raw transaction returned instead of ticket ID.');
-          console.log('This might indicate the transaction needs to be submitted manually.');
-          console.log('Raw transaction hex:', response.rawtx.substring(0, 50) + '...\n');
+          spinner.succeed('Transaction created.');
+          showBox(
+            `${icons.warning} ${colors.warning('Raw transaction returned')}\n\n` +
+              `This might indicate the transaction needs to be submitted manually.\n\n` +
+              `${colors.muted('Raw TX:')} ${response.rawtx.substring(0, 50)}...`,
+            'Warning',
+            'warning',
+          );
         } else {
           // No valid response
-          singleLineLogger.done('❌ Transfer failed. No ticket ID or transaction returned.');
+          spinner.fail('Transfer failed. No ticket ID or transaction returned.');
         }
       } catch (error: any) {
         console.log(error);
-        singleLineLogger.done(
-          `❌ Transfer failed. ${
+        spinner.fail(
+          `Transfer failed. ${
             error && error.message
               ? error.message.includes('status: 423')
                 ? 'The sending or receiving address may be frozen or blacklisted. Please visit https://mnee.io and contact support for questions or concerns.'
@@ -496,73 +740,78 @@ program
         process.exit(1);
       }
     } catch (error) {
-      console.log('\n❌ Operation interrupted.');
+      console.log(`\n${icons.error} ${colors.error('Operation interrupted.')}`);
       process.exit(1);
     }
   });
 
 program
-  .command('status')
+  .command('status <ticketId>')
   .description('Check the status of a transaction using its ticket ID')
-  .argument('<ticketId>', 'The ticket ID to check status for')
   .action(async (ticketId) => {
     try {
       const activeWallet = await getActiveWallet();
 
       if (!activeWallet) {
         console.error(
-          '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+          `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+            'mnee create',
+          )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
         );
         return;
       }
 
-      singleLineLogger.start(`Checking status for ticket: ${ticketId}...`);
+      const spinner = createSpinner(`Checking status for ticket: ${colors.primary(ticketId)}...`);
+      spinner.start();
 
       try {
         const mneeInstance = getMneeInstance(activeWallet.environment);
         const status = await getTxStatus(mneeInstance, ticketId);
 
-        singleLineLogger.done('');
+        spinner.stop();
 
-        console.log('\n📋 Transaction Status:');
-        console.log('---------------------');
-        console.log(`Ticket ID: ${status.id}`);
-        console.log(`Status: ${status.status}`);
+        const statusColor =
+          {
+            BROADCASTING: colors.warning,
+            SUCCESS: colors.success,
+            MINED: colors.success,
+            FAILED: colors.error,
+          }[status.status] || colors.info;
+
+        const statusIcon =
+          {
+            BROADCASTING: icons.time,
+            SUCCESS: icons.success,
+            MINED: '⛏️',
+            FAILED: icons.error,
+          }[status.status] || icons.info;
+
+        let content =
+          `${statusIcon} ${colors.highlight('Transaction Status')}\n\n` +
+          `${icons.dot} Ticket ID: ${colors.info(status.id)}\n` +
+          `${icons.dot} Status: ${statusColor(status.status)}\n`;
 
         if (status.tx_id) {
-          console.log(`Transaction ID: ${status.tx_id}`);
-          console.log(`View on WhatsOnChain: https://whatsonchain.com/tx/${status.tx_id}`);
+          content += `${icons.dot} TX ID: ${colors.info(status.tx_id)}\n`;
+          content += `${icons.dot} ${colors.primary('View:')} ${colors.info(
+            `https://whatsonchain.com/tx/${status.tx_id}?tab=m8eqcrbs`,
+          )}\n`;
         }
 
-        console.log(`Created: ${new Date(status.createdAt).toLocaleString()}`);
-        console.log(`Updated: ${new Date(status.updatedAt).toLocaleString()}`);
+        content += `\n${icons.dot} Created: ${colors.muted(new Date(status.createdAt).toLocaleString())}\n`;
+        content += `${icons.dot} Updated: ${colors.muted(new Date(status.updatedAt).toLocaleString())}`;
 
         if (status.errors) {
-          console.log(`Errors: ${status.errors}`);
+          content += `\n\n${icons.warning} ${colors.error('Errors:')} ${status.errors}`;
         }
 
-        // Provide status-specific messages
-        switch (status.status) {
-          case 'BROADCASTING':
-            console.log('\n⏳ Transaction is being broadcast to the network...');
-            break;
-          case 'SUCCESS':
-            console.log('\n✅ Transaction successfully broadcast!');
-            break;
-          case 'MINED':
-            console.log('\n⛏️ Transaction has been mined into a block!');
-            break;
-          case 'FAILED':
-            console.log('\n❌ Transaction failed.');
-            break;
-        }
-        console.log('');
+        const boxType = status.status === 'FAILED' ? 'error' : status.status === 'BROADCASTING' ? 'warning' : 'success';
+        showBox(content, 'Transaction Status', boxType);
       } catch (error: any) {
-        singleLineLogger.done('');
-        console.error(`❌ Error checking status: ${error.message || 'Unknown error'}`);
+        spinner.fail(`Error checking status: ${error.message || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('\n❌ Error:', error);
+      console.error(`\n${icons.error} ${colors.error('Error:')}`, error);
     }
   });
 
@@ -575,7 +824,9 @@ program
 
       if (!activeWallet) {
         console.error(
-          '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+          `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+            'mnee create',
+          )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
         );
         return;
       }
@@ -619,20 +870,26 @@ program
       const privateKey = PrivateKey.fromString(privateKeyHex);
       const wif = privateKey.toWif();
 
-      console.log(`\nWallet Name: ${activeWallet.name}`);
-      console.log(`Environment: ${activeWallet.environment}`);
-      console.log(`Wallet Address:\n${activeWallet.address}`);
-      console.log(`\nWIF Private Key:\n${wif}`);
-      console.log('\n🚨 Keep this key SAFE! Never share it with anyone.\n');
+      showBox(
+        `${icons.key} ${colors.highlight('Private Key Export')}\n\n` +
+          `${icons.wallet} Wallet: ${colors.primary(activeWallet.name)}\n` +
+          `${icons.dot} Environment: ${activeWallet.environment === 'production' ? colors.success(activeWallet.environment) : colors.warning(activeWallet.environment)}\n` +
+          `${icons.dot} Address: ${colors.muted(activeWallet.address)}\n\n` +
+          `${icons.lock} ${colors.warning('WIF Private Key:')}\n` +
+          `${colors.muted(wif)}\n\n` +
+          `${icons.warning} ${colors.error('KEEP THIS KEY SAFE!')}\n` +
+          `${colors.error('Never share it with anyone!')}`,
+        'Private Key',
+        'warning',
+      );
     } catch (error) {
-      console.error('\n❌ Error exporting private key:', error);
+      console.error(`\n${icons.error} ${colors.error('Error exporting private key:')}`, error);
     }
   });
 
 program
-  .command('delete')
+  .command('delete <walletName>')
   .description('Delete a wallet')
-  .argument('<walletName>', 'Name of the wallet to delete (defaults to active wallet)')
   .action(async (walletName) => {
     try {
       const wallets = await getAllWallets();
@@ -720,9 +977,9 @@ program
       // Then update the wallets list
       await saveWallets(updatedWallets);
 
-      console.log(`\n🗑️ Wallet "${walletName}" deleted successfully!`);
+      animateSuccess(`Wallet "${walletName}" deleted successfully!`);
     } catch (error) {
-      console.error('\n❌ Error deleting wallet:', error);
+      console.error(`\n${icons.error} ${colors.error('Error deleting wallet:')}`, error);
     }
   });
 
@@ -739,19 +996,30 @@ program
         return;
       }
 
-      console.log('\nYour Wallets:');
-      console.log('-------------');
+      console.log(`\n${icons.wallet} ${colors.highlight('Your Wallets')}\n`);
 
-      wallets.forEach((wallet, index) => {
-        const activeIndicator = wallet.isActive ? ' (Active) ✅' : '';
-        console.log(`${index + 1}. ${wallet.name}${activeIndicator}`);
-        console.log(`   Environment: ${wallet.environment}`);
-        console.log(`   Address: ${wallet.address}`);
-        console.log('');
+      // Sort wallets: production first, then sandbox
+      const sortedWallets = [...wallets].sort((a, b) => {
+        if (a.environment === 'production' && b.environment === 'sandbox') return -1;
+        if (a.environment === 'sandbox' && b.environment === 'production') return 1;
+        return 0;
       });
 
+      const walletData = sortedWallets.map((wallet, index) => ({
+        '#': colors.muted(`${index + 1}`),
+        Name: wallet.isActive ? `${colors.primary(wallet.name)} ${icons.check}` : wallet.name,
+        Environment:
+          wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment),
+        Address: colors.muted(wallet.address),
+      }));
+
+      table(walletData, ['#', 'Name', 'Environment', 'Address']);
+      console.log('');
+
       if (activeWallet) {
-        console.log(`Current active wallet: ${activeWallet.name} (${activeWallet.environment})`);
+        console.log(
+          `${icons.star} Current active wallet: ${colors.primary(activeWallet.name)} (${activeWallet.environment})`,
+        );
       }
 
       const { wantToSwitch } = await safePrompt([
@@ -764,17 +1032,45 @@ program
       ]);
 
       if (wantToSwitch) {
+        const choices: any[] = [];
+        let lastEnv: string | null = null;
+
+        // Find the longest wallet name for proper padding
+        const maxNameLength = Math.max(...sortedWallets.map((w) => w.name.length));
+
+        sortedWallets.forEach((wallet) => {
+          // Add separator when switching from production to sandbox
+          if (lastEnv === 'production' && wallet.environment === 'sandbox') {
+            choices.push(new inquirer.Separator(colors.muted('\n──── Sandbox Wallets ────')));
+          } else if (lastEnv === null && wallet.environment === 'production') {
+            choices.push(new inquirer.Separator(colors.muted('──── Production Wallets ────')));
+          } else if (lastEnv === null && wallet.environment === 'sandbox') {
+            choices.push(new inquirer.Separator(colors.muted('──── Sandbox Wallets ────')));
+          }
+
+          const envIcon = wallet.environment === 'production' ? '●' : '○';
+          const envColor = wallet.environment === 'production' ? colors.success : colors.warning;
+          const envLabel = wallet.environment === 'production' ? colors.success('[PROD]') : colors.warning('[TEST]');
+          const activeLabel = wallet.isActive ? colors.cyan(' ← current') : '';
+          const paddedName = wallet.name + ' '.repeat(Math.max(0, maxNameLength - wallet.name.length));
+          const addressShort = `${wallet.address.slice(0, 10)}...${wallet.address.slice(-8)}`;
+
+          choices.push({
+            name: `  ${envColor(envIcon)}  ${paddedName}  ${envLabel}  ${colors.muted(addressShort)}${activeLabel}`,
+            value: wallet.name,
+            short: wallet.name,
+          });
+
+          lastEnv = wallet.environment;
+        });
+
         const { selectedWallet } = await safePrompt([
           {
             type: 'list',
             name: 'selectedWallet',
             message: 'Select a wallet to switch to:',
-            choices: wallets.map((wallet) => ({
-              name: `${wallet.name} | ${wallet.environment} | ${wallet.address.slice(0, 5)}...${wallet.address.slice(
-                -4,
-              )}`,
-              value: wallet.name,
-            })),
+            choices,
+            pageSize: 15,
           },
         ]);
 
@@ -787,20 +1083,21 @@ program
           await saveWallets(wallets);
           await setActiveWallet(wallet);
 
-          console.log(`\n✅ Switched to wallet: ${wallet.name}`);
-          console.log(`Environment: ${wallet.environment}`);
-          console.log(`Address: ${wallet.address}`);
+          animateSuccess(`Switched to wallet: ${wallet.name}`);
+          setTimeout(() => {
+            console.log(`${icons.dot} Environment: ${wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment)}`);
+            console.log(`${icons.dot} Address: ${colors.muted(wallet.address)}`);
+          }, 1200);
         }
       }
     } catch (error) {
-      console.error('\n❌ Error listing wallets:', error);
+      console.error(`\n${icons.error} ${colors.error('Error listing wallets:')}`, error);
     }
   });
 
 program
-  .command('use')
+  .command('use <walletName>')
   .description('Switch to a different wallet')
-  .argument('<walletName>', 'Name of the wallet to switch to')
   .action(async (walletName) => {
     try {
       const wallets = await getAllWallets();
@@ -829,19 +1126,19 @@ program
       await saveWallets(wallets);
       await setActiveWallet(wallet);
 
-      console.log(`\n✅ Switched to wallet: ${wallet.name}`);
-      console.log(`Environment: ${wallet.environment}`);
-      console.log(`Address: ${wallet.address}`);
+      animateSuccess(`Switched to wallet: ${wallet.name}`);
+      setTimeout(() => {
+        console.log(`${icons.dot} Environment: ${colors.info(wallet.environment)}`);
+        console.log(`${icons.dot} Address: ${colors.info(wallet.address)}`);
+      }, 1200);
     } catch (error) {
-      console.error('\n❌ Error switching wallet:', error);
+      console.error(`\n${icons.error} ${colors.error('Error switching wallet:')}`, error);
     }
   });
 
 program
-  .command('rename')
+  .command('rename <oldName> <newName>')
   .description('Rename a wallet')
-  .argument('<oldName>', 'Current name of the wallet')
-  .argument('<newName>', 'New name for the wallet')
   .action(async (oldName, newName) => {
     try {
       const validation = validateWalletName(newName);
@@ -878,13 +1175,15 @@ program
         await setActiveWallet(wallet);
       }
 
-      console.log(`\n✅ Wallet renamed from "${oldName}" to "${newName}"`);
+      animateSuccess(`Wallet renamed from "${oldName}" to "${newName}"`);
 
       if (wallet.isActive) {
-        console.log('This is your active wallet.');
+        setTimeout(() => {
+          console.log(`${icons.star} ${colors.info('This is your active wallet.')}`);
+        }, 1200);
       }
     } catch (error) {
-      console.error('\n❌ Error renaming wallet:', error);
+      console.error(`\n${icons.error} ${colors.error('Error renaming wallet:')}`, error);
     }
   });
 
@@ -1022,13 +1321,21 @@ program
       await setPrivateKey(address, encryptedKey);
       await setActiveWallet(newWallet);
 
-      console.log('\n✅ Wallet imported successfully!');
-      console.log(`\nName: ${walletName}`);
-      console.log(`Environment: ${environment}`);
-      console.log(`Address: ${address}\n`);
-      console.log('This wallet is now your active wallet.');
+      animateSuccess('Wallet imported successfully!');
+
+      setTimeout(() => {
+        showBox(
+          `${icons.wallet} ${colors.highlight('Imported Wallet')}\n\n` +
+            `${icons.dot} Name: ${colors.primary(walletName)}\n` +
+            `${icons.dot} Environment: ${environment === 'production' ? colors.success(environment) : colors.warning(environment)}\n` +
+            `${icons.dot} Address: ${colors.muted(address)}\n\n` +
+            `${icons.check} ${colors.success('This wallet is now active')}`,
+          'Import Success',
+          'success',
+        );
+      }, 1200);
     } catch (error) {
-      console.error('\n❌ Error importing wallet:', error);
+      console.error(`\n${icons.error} ${colors.error('Error importing wallet:')}`, error);
     }
   });
 
@@ -1064,13 +1371,22 @@ program
 
       await saveConfig(config);
 
-      console.log(`\n✅ Successfully authenticated as ${result.user.email}`);
-      console.log('\nYou can now use CLI commands like:');
-      console.log('  mnee faucet - Request sandbox tokens (sandbox wallets only)');
-      console.log('  mnee whoami - Show current user');
-      console.log('  mnee logout - Sign out');
+      animateSuccess(`Successfully authenticated as ${result.user.email}`);
+
+      setTimeout(() => {
+        showBox(
+          `${icons.unlock} ${colors.highlight('Authentication Complete')}\n\n` +
+            `${icons.dot} Logged in as: ${colors.primary(result.user.email)}\n\n` +
+            `${colors.info('Available commands:')}\n` +
+            `  ${colors.primary('mnee faucet')} - Request sandbox tokens\n` +
+            `  ${colors.primary('mnee whoami')} - Show current user\n` +
+            `  ${colors.primary('mnee logout')} - Sign out`,
+          'Welcome',
+          'success',
+        );
+      }, 1200);
     } catch (error: any) {
-      console.error('\n❌ Authentication failed:', error.message);
+      console.error(`\n${icons.error} ${colors.error('Authentication failed:')}`, error.message);
       process.exit(1);
     }
   });
@@ -1093,9 +1409,9 @@ program
       // Clear local config
       await clearConfig();
 
-      console.log('✅ Successfully logged out.');
+      animateSuccess('Successfully logged out.');
     } catch (error: any) {
-      console.error('❌ Error during logout:', error.message);
+      console.error(`${icons.error} ${colors.error('Error during logout:')}`, error.message);
     }
   });
 
@@ -1114,19 +1430,19 @@ program
       try {
         const profile = await getProfile(apiUrl, config.token);
 
-        console.log('\n👤 Current User:');
-        console.log(`Email: ${profile.email}`);
-        console.log(`Name: ${profile.name || 'Not set'}`);
-        if (profile.company) {
-          console.log(`Company: ${profile.company}`);
-        }
-        console.log('');
+        showBox(
+          `${icons.dot} Email: ${colors.primary(profile.email)}\n` +
+            `${icons.dot} Name: ${colors.info(profile.name || 'Not set')}` +
+            (profile.company ? `\n${icons.dot} Company: ${colors.info(profile.company)}` : ''),
+          'Current User',
+          'info',
+        );
       } catch (error) {
         console.error('❌ Failed to get user profile. Your session may have expired.');
         console.log('Run `mnee login` to authenticate again.');
       }
     } catch (error: any) {
-      console.error('❌ Error:', error.message);
+      console.error(`${icons.error} ${colors.error('Error:')}`, error.message);
     }
   });
 
@@ -1140,7 +1456,9 @@ program
 
       if (!activeWallet) {
         console.error(
-          '❌ No active wallet found. Run `mnee create` first or `mnee use <wallet-name>` to select a wallet.',
+          `${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary(
+            'mnee create',
+          )} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`,
         );
         return;
       }
@@ -1165,7 +1483,8 @@ program
         return;
       }
 
-      console.log('\n💧 Requesting sandbox tokens...');
+      const spinner = createSpinner('Requesting sandbox tokens...');
+      spinner.start();
 
       const response = await fetch(`${apiUrl}/faucet/cli`, {
         method: 'POST',
@@ -1179,14 +1498,23 @@ program
       const result = (await response.json()) as { success: boolean; message: string; amount: number; txid: string };
 
       if (result.success) {
-        console.log(`\n✅ Success! ${result.amount || 10} MNEE tokens sent.`);
-        console.log(`Transaction ID: ${result.txid}`);
-        console.log(`\nView on WhatsOnChain: https://whatsonchain.com/tx/${result.txid}?tab=m8eqcrbs`);
+        spinner.succeed('Faucet request successful!');
+
+        showBox(
+          `${icons.money} ${colors.highlight('Tokens Sent!')}\n\n` +
+            `${icons.dot} Amount: ${formatAmount(result.amount || 10)}\n` +
+            `${icons.dot} To: ${colors.info(formatAddress(depositAddress))}\n` +
+            `${icons.dot} TX ID: ${colors.muted(result.txid)}\n\n` +
+            `${colors.primary('View on WhatsOnChain:')}\n` +
+            `${colors.info(`https://whatsonchain.com/tx/${result.txid}?tab=m8eqcrbs`)}`,
+          'Faucet Success',
+          'success',
+        );
       } else {
-        console.error(`\n❌ ${result.message || 'Failed to request tokens'}`);
+        spinner.fail(result.message || 'Failed to request tokens');
       }
     } catch (error: any) {
-      console.error('\n❌ Faucet request failed:', error.message);
+      console.error(`\n${icons.error} ${colors.error('Faucet request failed:')}`, error.message);
     }
   });
 
@@ -1305,11 +1633,32 @@ const validateWalletName = (name: string): { isValid: boolean; error?: string } 
   return { isValid: true };
 };
 
+const validateBSVAddress = (address: string): boolean | string => {
+  if (!address || address.trim() === '') {
+    return 'Address cannot be empty';
+  }
+
+  const trimmedAddress = address.trim();
+
+  // BSV mainnet addresses start with '1' (P2PKH)
+  if (!trimmedAddress.startsWith('1')) {
+    return 'Invalid BSV address. Address must start with "1" for mainnet';
+  }
+
+  try {
+    // Use @bsv/sdk's fromBase58Check to validate the address format and checksum
+    Utils.fromBase58Check(trimmedAddress);
+    return true;
+  } catch (error) {
+    return 'Invalid BSV address format. Please check the address and try again';
+  }
+};
+
 await migrateOldWallets();
 
 program.parse(process.argv);
 
 process.on('SIGINT', () => {
-  console.log('\n👋 Exiting program gracefully...');
+  console.log(`\n${icons.dot} ${colors.muted('Exiting gracefully...')}`);
   process.exit(0);
 });

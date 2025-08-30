@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import crypto from 'crypto';
-import { PrivateKey, Utils } from '@bsv/sdk';
+import { PrivateKey } from '@bsv/sdk';
 import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWalletByAddress, setPrivateKey, deletePrivateKey, getPrivateKey, clearActiveWallet, getLegacyWallet, deleteLegacyWallet, } from './utils/keytar.js';
 import { getVersion } from './utils/helper.js';
@@ -56,21 +56,7 @@ const program = new Command();
 if (!process.argv.slice(2).length) {
     await showWelcome();
 }
-program
-    .name('mnee')
-    .description(colors.muted('CLI for interacting with MNEE tokens'))
-    .version(getVersion())
-    .configureHelp({
-    sortSubcommands: true,
-    subcommandTerm: (cmd) => cmd.name() + ' ' + cmd.usage(),
-})
-    .addHelpText('before', `\n${colors.highlight('MNEE CLI')} ${colors.muted(`v${getVersion()}`)}\n`)
-    .addHelpText('after', `\n${colors.muted('Examples:')}\n` +
-    `  ${colors.primary('mnee create')}              ${colors.muted('# Create a new wallet')}\n` +
-    `  ${colors.primary('mnee balance')}             ${colors.muted('# Check wallet balance')}\n` +
-    `  ${colors.primary('mnee transfer 10 1A...')}   ${colors.muted('# Quick transfer')}\n` +
-    `  ${colors.primary('mnee list')}                ${colors.muted('# List all wallets')}\n\n` +
-    `${colors.muted('For more help:')} ${colors.primary('mnee <command> --help')}\n`);
+program.name('mnee').description('CLI for interacting with MNEE tokens').version(getVersion());
 // Add error handling for the main program
 program.exitOverride((err) => {
     if (err.code === 'commander.help') {
@@ -176,8 +162,8 @@ program
         setTimeout(() => {
             showBox(`${icons.wallet} ${colors.highlight('Wallet Details')}\n\n` +
                 `${icons.dot} Name: ${colors.primary(walletName)}\n` +
-                `${icons.dot} Environment: ${environment === 'production' ? colors.success(environment) : colors.warning(environment)}\n` +
-                `${icons.dot} Address: ${colors.muted(address)}\n\n` +
+                `${icons.dot} Environment: ${colors.info(environment)}\n` +
+                `${icons.dot} Address: ${colors.info(address)}\n\n` +
                 `${icons.check} ${colors.success('This wallet is now active')}`, 'New Wallet Created', 'success');
         }, 1200);
     }
@@ -196,8 +182,8 @@ program
     }
     showBox(`${icons.wallet} ${colors.highlight('Active Wallet')}\n\n` +
         `${icons.dot} Name: ${colors.primary(activeWallet.name)}\n` +
-        `${icons.dot} Environment: ${activeWallet.environment === 'production' ? colors.success(activeWallet.environment) : colors.warning(activeWallet.environment)}\n` +
-        `${icons.dot} Address: ${colors.muted(activeWallet.address)}`, 'Wallet Address', 'info');
+        `${icons.dot} Environment: ${colors.info(activeWallet.environment)}\n` +
+        `${icons.dot} Address: ${colors.info(activeWallet.address)}`, 'Wallet Address', 'info');
 });
 program
     .command('balance')
@@ -217,7 +203,7 @@ program
         showBox(`${icons.money} ${colors.highlight('Wallet Balance')}\n\n` +
             `${formatAmount(decimalAmount)}\n\n` +
             `${icons.wallet} ${colors.muted(activeWallet.name)}\n` +
-            `${icons.arrow} ${colors.muted(formatAddress(activeWallet.address))}`, 'Balance', 'success');
+            `${icons.dot} ${colors.muted(formatAddress(activeWallet.address))}`, 'Balance', 'success');
     }
     catch (error) {
         spinner.fail(colors.error('Error fetching balance'));
@@ -226,15 +212,9 @@ program
 });
 program
     .command('history')
-    .description('Get transaction history with filtering options')
+    .description('Get the history of the wallet')
     .option('-u, --unconfirmed', 'Show only unconfirmed transactions')
     .option('-c, --confirmed', 'Show only confirmed transactions')
-    .option('-l, --limit <number>', 'Show only the N most recent transactions (e.g., -l 10)', parseInt)
-    .option('-t, --type <type>', 'Filter by type: "send" or "receive"')
-    .option('--txid <txid>', 'Search by transaction ID (partial match)')
-    .option('--address <address>', 'Filter by counterparty address (partial match)')
-    .option('--min <amount>', 'Show transactions >= amount (e.g., --min 0.5)', parseFloat)
-    .option('--max <amount>', 'Show transactions <= amount (e.g., --max 100)', parseFloat)
     .action(async (options) => {
     const activeWallet = await getActiveWallet();
     if (!activeWallet) {
@@ -271,96 +251,23 @@ program
             }
         });
         history = Array.from(txMap.values());
-        // Apply filters based on options
+        // Filter based on options
         if (options.unconfirmed) {
             history = history.filter((tx) => tx.status === 'unconfirmed');
+            console.log(JSON.stringify(history, null, 2));
+            spinner.succeed(`${history.length} unconfirmed transaction${history.length !== 1 ? 's' : ''} fetched!`);
+            console.log('');
         }
         else if (options.confirmed) {
             history = history.filter((tx) => tx.status === 'confirmed');
-        }
-        // Filter by transaction type
-        if (options.type) {
-            const type = options.type.toLowerCase();
-            if (type === 'send' || type === 'receive') {
-                history = history.filter((tx) => tx.type === type);
-            }
-        }
-        // Filter by transaction ID (partial match)
-        if (options.txid) {
-            history = history.filter((tx) => tx.txid.toLowerCase().includes(options.txid.toLowerCase()));
-        }
-        // Filter by counterparty address
-        if (options.address) {
-            history = history.filter((tx) => tx.counterparties?.some(cp => cp.address.toLowerCase().includes(options.address.toLowerCase())));
-        }
-        // Filter by amount range
-        if (options.min !== undefined || options.max !== undefined) {
-            history = history.filter((tx) => {
-                const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
-                if (options.min !== undefined && amount < options.min)
-                    return false;
-                if (options.max !== undefined && amount > options.max)
-                    return false;
-                return true;
-            });
-        }
-        // Apply limit if specified
-        if (options.limit && options.limit > 0) {
-            history = history.slice(0, options.limit);
-        }
-        spinner.stop();
-        // Display formatted history
-        if (history.length === 0) {
-            showBox(`${icons.info} No transactions found`, 'Transaction History', 'info');
+            console.log(JSON.stringify(history, null, 2));
+            spinner.succeed(`${history.length} confirmed transaction${history.length !== 1 ? 's' : ''} fetched!`);
+            console.log('');
         }
         else {
-            // Sort transactions by score (newest first)
-            history.sort((a, b) => (b.score || 0) - (a.score || 0));
-            console.log('');
-            console.log(colors.highlight(`${icons.time} Transaction History`));
-            console.log(colors.muted('─'.repeat(60)));
-            console.log('');
-            // Display transactions
-            history.forEach((tx, index) => {
-                // Transaction type and styling
-                const type = tx.type || 'unknown';
-                const icon = type === 'send' ? icons.send : type === 'receive' ? icons.receive : icons.dot;
-                const color = type === 'send' ? colors.error : type === 'receive' ? colors.success : colors.muted;
-                // Convert amount and fee from atomic units
-                const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
-                const fee = mneeInstance.fromAtomicAmount(tx.fee || 0);
-                // Status indicator
-                const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
-                const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('pending');
-                // Block height
-                const heightDisplay = tx.height ? `block ${tx.height}` : '';
-                // Format the main transaction line
-                console.log(`  ${icon} ${color(type.toUpperCase().padEnd(8))} ${formatAmount(amount).padEnd(22)} ${statusIcon} ${statusText}`);
-                // Show fee if it exists
-                if (fee > 0) {
-                    console.log(`     ${colors.muted('fee:')} ${formatAmount(fee)}`);
-                }
-                // Show all counterparties
-                if (tx.counterparties && tx.counterparties.length > 0) {
-                    tx.counterparties.forEach((cp) => {
-                        const cpAmount = mneeInstance.fromAtomicAmount(cp.amount || 0);
-                        console.log(`     ${colors.muted(type === 'send' ? 'to:' : 'from:')} ${colors.muted(cp.address)} ${formatAmount(cpAmount)}`);
-                    });
-                }
-                // Show block height
-                if (heightDisplay) {
-                    console.log(`     ${colors.muted(heightDisplay)}`);
-                }
-                // Show transaction ID
-                console.log(`     ${colors.muted(`tx: ${tx.txid}`)}`);
-                // Add separator between transactions (except for the last one)
-                if (index < history.length - 1) {
-                    console.log(colors.muted('     ' + '·'.repeat(50)));
-                }
-                console.log('');
-            });
-            console.log(colors.muted('─'.repeat(60)));
-            console.log(colors.muted(`  Total: ${history.length} transaction${history.length !== 1 ? 's' : ''}`));
+            // Show all transactions by default
+            console.log(JSON.stringify(history, null, 2));
+            spinner.succeed(`${history.length} transaction${history.length !== 1 ? 's' : ''} fetched!`);
             console.log('');
         }
     }
@@ -370,89 +277,50 @@ program
     }
 });
 program
-    .command('transfer [amount] [address]')
+    .command('transfer')
     .description('Transfer MNEE to another address')
-    .action(async (amount, address) => {
+    .action(async () => {
     try {
         const activeWallet = await getActiveWallet();
         if (!activeWallet) {
             console.error(`${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary('mnee create')} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`);
             return;
         }
-        // Validate amount if provided as argument
-        if (amount) {
-            const validateAmount = (input) => {
-                const trimmed = input.trim();
-                if (!trimmed)
-                    return 'Amount is required';
-                const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
-                if (!validNumberRegex.test(trimmed)) {
-                    return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
-                }
-                const num = parseFloat(trimmed);
-                if (isNaN(num))
-                    return 'Invalid amount. Please enter a valid number';
-                if (num <= 0)
-                    return 'Amount must be greater than 0';
-                if (num < 0.00001)
-                    return 'Amount must be at least 0.00001 MNEE';
-                return true;
-            };
-            const validation = validateAmount(amount);
-            if (validation !== true) {
-                console.error(`${icons.error} ${colors.error(validation)}`);
-                return;
-            }
-        }
-        // Validate address if provided as argument
-        if (address) {
-            const validation = validateBSVAddress(address);
-            if (validation !== true) {
-                console.error(`${icons.error} ${colors.error(validation)}`);
-                return;
-            }
-        }
-        // Prompt for amount and/or address if not provided
-        let transferAmount = amount;
-        let toAddress = address;
-        if (!amount || !address) {
-            const prompts = [];
-            if (!amount) {
-                prompts.push({
-                    type: 'input',
-                    name: 'amount',
-                    message: 'Enter the amount to transfer:',
-                    validate: (input) => {
-                        const trimmed = input.trim();
-                        if (!trimmed)
-                            return 'Amount is required';
-                        const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
-                        if (!validNumberRegex.test(trimmed)) {
-                            return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
-                        }
-                        const num = parseFloat(trimmed);
-                        if (isNaN(num))
-                            return 'Invalid amount. Please enter a valid number';
-                        if (num <= 0)
-                            return 'Amount must be greater than 0';
-                        if (num < 0.00001)
-                            return 'Amount must be at least 0.00001 MNEE';
-                        return true;
-                    },
-                });
-            }
-            if (!address) {
-                prompts.push({
-                    type: 'input',
-                    name: 'toAddress',
-                    message: "Enter the recipient's address:",
-                    validate: validateBSVAddress,
-                });
-            }
-            const answers = await safePrompt(prompts);
-            transferAmount = amount || answers.amount;
-            toAddress = address || answers.toAddress;
-        }
+        const { amount, toAddress } = await safePrompt([
+            {
+                type: 'input',
+                name: 'amount',
+                message: 'Enter the amount to transfer:',
+                validate: (input) => {
+                    // Check if the input is a valid number format
+                    const trimmed = input.trim();
+                    if (!trimmed) {
+                        return 'Amount is required';
+                    }
+                    // Regex to match valid decimal numbers (including scientific notation)
+                    const validNumberRegex = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+                    if (!validNumberRegex.test(trimmed)) {
+                        return 'Invalid amount. Please enter a valid number (e.g., 10, 10.5, 1.5e-3)';
+                    }
+                    const num = parseFloat(trimmed);
+                    if (isNaN(num)) {
+                        return 'Invalid amount. Please enter a valid number';
+                    }
+                    if (num <= 0) {
+                        return 'Amount must be greater than 0';
+                    }
+                    if (num < 0.00001) {
+                        return 'Amount must be at least 0.00001 MNEE';
+                    }
+                    return true;
+                },
+            },
+            {
+                type: 'input',
+                name: 'toAddress',
+                message: "Enter the recipient's address:",
+            },
+        ]);
         const { password } = await safePrompt([
             {
                 type: 'password',
@@ -472,7 +340,7 @@ program
             return;
         }
         const privateKey = PrivateKey.fromString(privateKeyHex);
-        const request = [{ address: toAddress, amount: parseFloat(transferAmount) }];
+        const request = [{ address: toAddress, amount: parseFloat(amount) }];
         const spinner = createSpinner(`${icons.send} Initiating transfer from ${colors.primary(activeWallet.name)}...`);
         spinner.start();
         try {
@@ -482,40 +350,32 @@ program
             // Check what type of response we got
             if (response.ticketId) {
                 // We got a ticket ID, poll for status
-                spinner.stop();
-                // Start the transaction animation loop
-                let statusReceived = false;
-                const startAnimation = async () => {
-                    // Show initial message
-                    process.stdout.write(`\r${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(`Ticket: ${response.ticketId}`)}`);
-                    await new Promise((resolve) => setTimeout(resolve, 1500));
-                    while (!statusReceived) {
-                        await showTransactionAnimation();
-                        if (!statusReceived) {
-                            await new Promise((resolve) => setTimeout(resolve, 500));
-                        }
-                    }
-                };
-                // Start animation in background
-                const animationPromise = startAnimation();
+                spinner.succeed(`Transfer initiated! ${colors.muted(`Ticket: ${response.ticketId}`)}`);
+                const statusSpinner = createSpinner('Waiting for transaction to be processed...');
+                statusSpinner.start();
                 // Poll for transaction status
                 const finalStatus = await pollForTxStatus(mneeInstance, response.ticketId, (status) => {
-                    // We'll handle the final status display, just track state changes
-                    if (status.status !== 'BROADCASTING') {
-                        statusReceived = true;
+                    switch (status.status) {
+                        case 'BROADCASTING':
+                            statusSpinner.text = `${icons.send} Broadcasting transaction...`;
+                            break;
+                        case 'SUCCESS':
+                            statusSpinner.succeed('Transaction successful!');
+                            break;
+                        case 'MINED':
+                            statusSpinner.succeed('Transaction mined!');
+                            break;
+                        case 'FAILED':
+                            statusSpinner.fail(`Transaction failed: ${status.errors || 'Unknown error'}`);
+                            break;
                     }
                 });
-                // Stop animation
-                statusReceived = true;
-                await animationPromise;
-                process.stdout.write('\r' + ' '.repeat(50) + '\r');
                 if (finalStatus.status === 'SUCCESS' || finalStatus.status === 'MINED') {
-                    // Show the complete animation
-                    await showTransactionAnimation(true);
+                    await showTransactionAnimation();
                     animateSuccess('Transfer complete!');
                     setTimeout(() => {
                         showBox(`${icons.check} ${colors.highlight('Transaction Details')}\n\n` +
-                            `${icons.dot} Amount: ${formatAmount(transferAmount)}\n` +
+                            `${icons.dot} Amount: ${formatAmount(amount)}\n` +
                             `${icons.dot} To: ${colors.info(formatAddress(toAddress))}\n` +
                             `${icons.dot} TX ID: ${colors.muted(finalStatus.tx_id)}\n\n` +
                             `${colors.primary('View on WhatsOnChain:')}\n` +
@@ -523,7 +383,8 @@ program
                     }, 1200);
                 }
                 else if (finalStatus.status === 'FAILED') {
-                    showBox(`${icons.error} ${colors.error('Transaction failed')}\n\n` + `${finalStatus.errors || 'Unknown error'}`, 'Transfer Failed', 'error');
+                    showBox(`${icons.error} ${colors.error('Transaction failed')}\n\n` +
+                        `${finalStatus.errors || 'Unknown error'}`, 'Transfer Failed', 'error');
                 }
             }
             else if (response.rawtx) {
@@ -554,8 +415,9 @@ program
     }
 });
 program
-    .command('status <ticketId>')
+    .command('status')
     .description('Check the status of a transaction using its ticket ID')
+    .argument('<ticketId>', 'The ticket ID to check status for')
     .action(async (ticketId) => {
     try {
         const activeWallet = await getActiveWallet();
@@ -570,23 +432,23 @@ program
             const status = await getTxStatus(mneeInstance, ticketId);
             spinner.stop();
             const statusColor = {
-                BROADCASTING: colors.warning,
-                SUCCESS: colors.success,
-                MINED: colors.success,
-                FAILED: colors.error,
+                'BROADCASTING': colors.warning,
+                'SUCCESS': colors.success,
+                'MINED': colors.success,
+                'FAILED': colors.error,
             }[status.status] || colors.info;
             const statusIcon = {
-                BROADCASTING: icons.time,
-                SUCCESS: icons.success,
-                MINED: '⛏️',
-                FAILED: icons.error,
+                'BROADCASTING': icons.time,
+                'SUCCESS': icons.success,
+                'MINED': '⛏️',
+                'FAILED': icons.error,
             }[status.status] || icons.info;
             let content = `${statusIcon} ${colors.highlight('Transaction Status')}\n\n` +
                 `${icons.dot} Ticket ID: ${colors.info(status.id)}\n` +
                 `${icons.dot} Status: ${statusColor(status.status)}\n`;
             if (status.tx_id) {
                 content += `${icons.dot} TX ID: ${colors.info(status.tx_id)}\n`;
-                content += `${icons.dot} ${colors.primary('View:')} ${colors.info(`https://whatsonchain.com/tx/${status.tx_id}?tab=m8eqcrbs`)}\n`;
+                content += `${icons.dot} ${colors.primary('View:')} ${colors.info(`https://whatsonchain.com/tx/${status.tx_id}`)}\n`;
             }
             content += `\n${icons.dot} Created: ${colors.muted(new Date(status.createdAt).toLocaleString())}\n`;
             content += `${icons.dot} Updated: ${colors.muted(new Date(status.updatedAt).toLocaleString())}`;
@@ -648,8 +510,8 @@ program
         const wif = privateKey.toWif();
         showBox(`${icons.key} ${colors.highlight('Private Key Export')}\n\n` +
             `${icons.wallet} Wallet: ${colors.primary(activeWallet.name)}\n` +
-            `${icons.dot} Environment: ${activeWallet.environment === 'production' ? colors.success(activeWallet.environment) : colors.warning(activeWallet.environment)}\n` +
-            `${icons.dot} Address: ${colors.muted(activeWallet.address)}\n\n` +
+            `${icons.dot} Environment: ${colors.info(activeWallet.environment)}\n` +
+            `${icons.dot} Address: ${colors.info(activeWallet.address)}\n\n` +
             `${icons.lock} ${colors.warning('WIF Private Key:')}\n` +
             `${colors.muted(wif)}\n\n` +
             `${icons.warning} ${colors.error('KEEP THIS KEY SAFE!')}\n` +
@@ -660,8 +522,9 @@ program
     }
 });
 program
-    .command('delete <walletName>')
+    .command('delete')
     .description('Delete a wallet')
+    .argument('<walletName>', 'Name of the wallet to delete (defaults to active wallet)')
     .action(async (walletName) => {
     try {
         const wallets = await getAllWallets();
@@ -753,19 +616,11 @@ program
             return;
         }
         console.log(`\n${icons.wallet} ${colors.highlight('Your Wallets')}\n`);
-        // Sort wallets: production first, then sandbox
-        const sortedWallets = [...wallets].sort((a, b) => {
-            if (a.environment === 'production' && b.environment === 'sandbox')
-                return -1;
-            if (a.environment === 'sandbox' && b.environment === 'production')
-                return 1;
-            return 0;
-        });
-        const walletData = sortedWallets.map((wallet, index) => ({
+        const walletData = wallets.map((wallet, index) => ({
             '#': colors.muted(`${index + 1}`),
             Name: wallet.isActive ? `${colors.primary(wallet.name)} ${icons.check}` : wallet.name,
             Environment: wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment),
-            Address: colors.muted(wallet.address),
+            Address: colors.info(formatAddress(wallet.address)),
         }));
         table(walletData, ['#', 'Name', 'Environment', 'Address']);
         console.log('');
@@ -781,41 +636,15 @@ program
             },
         ]);
         if (wantToSwitch) {
-            const choices = [];
-            let lastEnv = null;
-            // Find the longest wallet name for proper padding
-            const maxNameLength = Math.max(...sortedWallets.map((w) => w.name.length));
-            sortedWallets.forEach((wallet) => {
-                // Add separator when switching from production to sandbox
-                if (lastEnv === 'production' && wallet.environment === 'sandbox') {
-                    choices.push(new inquirer.Separator(colors.muted('\n──── Sandbox Wallets ────')));
-                }
-                else if (lastEnv === null && wallet.environment === 'production') {
-                    choices.push(new inquirer.Separator(colors.muted('──── Production Wallets ────')));
-                }
-                else if (lastEnv === null && wallet.environment === 'sandbox') {
-                    choices.push(new inquirer.Separator(colors.muted('──── Sandbox Wallets ────')));
-                }
-                const envIcon = wallet.environment === 'production' ? '●' : '○';
-                const envColor = wallet.environment === 'production' ? colors.success : colors.warning;
-                const envLabel = wallet.environment === 'production' ? colors.success('[PROD]') : colors.warning('[TEST]');
-                const activeLabel = wallet.isActive ? colors.cyan(' ← current') : '';
-                const paddedName = wallet.name + ' '.repeat(Math.max(0, maxNameLength - wallet.name.length));
-                const addressShort = `${wallet.address.slice(0, 10)}...${wallet.address.slice(-8)}`;
-                choices.push({
-                    name: `  ${envColor(envIcon)}  ${paddedName}  ${envLabel}  ${colors.muted(addressShort)}${activeLabel}`,
-                    value: wallet.name,
-                    short: wallet.name,
-                });
-                lastEnv = wallet.environment;
-            });
             const { selectedWallet } = await safePrompt([
                 {
                     type: 'list',
                     name: 'selectedWallet',
                     message: 'Select a wallet to switch to:',
-                    choices,
-                    pageSize: 15,
+                    choices: wallets.map((wallet) => ({
+                        name: `${wallet.name} | ${wallet.environment} | ${wallet.address.slice(0, 5)}...${wallet.address.slice(-4)}`,
+                        value: wallet.name,
+                    })),
                 },
             ]);
             const wallet = wallets.find((w) => w.name === selectedWallet);
@@ -827,8 +656,8 @@ program
                 await setActiveWallet(wallet);
                 animateSuccess(`Switched to wallet: ${wallet.name}`);
                 setTimeout(() => {
-                    console.log(`${icons.dot} Environment: ${wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment)}`);
-                    console.log(`${icons.dot} Address: ${colors.muted(wallet.address)}`);
+                    console.log(`${icons.dot} Environment: ${colors.info(wallet.environment)}`);
+                    console.log(`${icons.dot} Address: ${colors.info(wallet.address)}`);
                 }, 1200);
             }
         }
@@ -838,8 +667,9 @@ program
     }
 });
 program
-    .command('use <walletName>')
+    .command('use')
     .description('Switch to a different wallet')
+    .argument('<walletName>', 'Name of the wallet to switch to')
     .action(async (walletName) => {
     try {
         const wallets = await getAllWallets();
@@ -873,8 +703,10 @@ program
     }
 });
 program
-    .command('rename <oldName> <newName>')
+    .command('rename')
     .description('Rename a wallet')
+    .argument('<oldName>', 'Current name of the wallet')
+    .argument('<newName>', 'New name for the wallet')
     .action(async (oldName, newName) => {
     try {
         const validation = validateWalletName(newName);
@@ -1033,8 +865,8 @@ program
         setTimeout(() => {
             showBox(`${icons.wallet} ${colors.highlight('Imported Wallet')}\n\n` +
                 `${icons.dot} Name: ${colors.primary(walletName)}\n` +
-                `${icons.dot} Environment: ${environment === 'production' ? colors.success(environment) : colors.warning(environment)}\n` +
-                `${icons.dot} Address: ${colors.muted(address)}\n\n` +
+                `${icons.dot} Environment: ${colors.info(environment)}\n` +
+                `${icons.dot} Address: ${colors.info(address)}\n\n` +
                 `${icons.check} ${colors.success('This wallet is now active')}`, 'Import Success', 'success');
         }, 1200);
     }
@@ -1279,24 +1111,6 @@ const validateWalletName = (name) => {
         };
     }
     return { isValid: true };
-};
-const validateBSVAddress = (address) => {
-    if (!address || address.trim() === '') {
-        return 'Address cannot be empty';
-    }
-    const trimmedAddress = address.trim();
-    // BSV mainnet addresses start with '1' (P2PKH)
-    if (!trimmedAddress.startsWith('1')) {
-        return 'Invalid BSV address. Address must start with "1" for mainnet';
-    }
-    try {
-        // Use @bsv/sdk's fromBase58Check to validate the address format and checksum
-        Utils.fromBase58Check(trimmedAddress);
-        return true;
-    }
-    catch (error) {
-        return 'Invalid BSV address format. Please check the address and try again';
-    }
 };
 await migrateOldWallets();
 program.parse(process.argv);
