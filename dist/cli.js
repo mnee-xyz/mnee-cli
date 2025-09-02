@@ -9,7 +9,7 @@ import { getVersion } from './utils/helper.js';
 import { colors, icons, createSpinner, showBox, formatAddress, formatAmount, formatLink, showWelcome, animateSuccess, startTransactionAnimation, startAirdropAnimation, } from './utils/ui.js';
 import Mnee from 'mnee';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
-const apiUrl = 'https://api-stg-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
+const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
 const getMneeInstance = (environment, apiKey) => {
     return new Mnee({ environment, apiKey });
 };

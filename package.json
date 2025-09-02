@@ -46,7 +46,7 @@
     "gradient-string": "^3.0.0",
     "inquirer": "^12.4.2",
     "keytar": "^7.9.0",
-    "mnee": "file:../mnee/mnee-3.0.0.tgz",
+    "mnee": "^3.0.0",
     "open": "^10.1.2",
     "ora": "^8.2.0"
   },
