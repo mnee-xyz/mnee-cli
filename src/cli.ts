@@ -33,7 +33,6 @@ import {
   animateSuccess,
   startTransactionAnimation,
   startAirdropAnimation,
-  table,
 } from './utils/ui.js';
 import Mnee, { SendMNEE, TxHistory, TransferStatus } from 'mnee';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
