@@ -37,7 +37,7 @@ import {
 import Mnee, { SendMNEE, TxHistory, TransferStatus } from 'mnee';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 
-const apiUrl = 'https://api-stg-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
+const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
 
 const getMneeInstance = (environment: WalletEnvironment, apiKey?: string): Mnee => {
   return new Mnee({ environment, apiKey });
