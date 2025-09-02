@@ -31,9 +31,7 @@ import {
   formatLink,
   showWelcome,
   animateSuccess,
-  showTransactionAnimation,
   startTransactionAnimation,
-  showAirdropAnimation,
   startAirdropAnimation,
   table,
 } from './utils/ui.js';
@@ -98,7 +96,7 @@ const safePrompt = async (questions: any) => {
 const program = new Command();
 if (!process.argv.slice(2).length) {
   await showWelcome();
-  process.exit(0);  // Exit after showing welcome, don't show help
+  process.exit(0); // Exit after showing welcome, don't show help
 }
 
 program
@@ -661,10 +659,14 @@ program
         if (response.ticketId) {
           // We got a ticket ID, poll for status
           spinner.stop();
-          
+
           // Show initial success message
-          console.log(`${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(`Ticket: ${response.ticketId}`)}`);
-          
+          console.log(
+            `${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(
+              `Ticket: ${response.ticketId}`,
+            )}`,
+          );
+
           // Start looping transaction animation
           const txAnim = startTransactionAnimation();
 
@@ -973,18 +975,15 @@ program
 
 program
   .command('list')
-  .description('List all your wallets and optionally switch to a different wallet')
+  .description('List and switch between your wallets')
   .action(async () => {
     try {
       const wallets = await getAllWallets();
-      const activeWallet = await getActiveWallet();
 
       if (wallets.length === 0) {
         console.log('\n❌ No wallets found. Run `mnee create` to create a wallet.');
         return;
       }
-
-      console.log(`\n${icons.wallet} ${colors.highlight('Your Wallets')}\n`);
 
       // Sort wallets: production first, then sandbox
       const sortedWallets = [...wallets].sort((a, b) => {
@@ -993,77 +992,56 @@ program
         return 0;
       });
 
-      const walletData = sortedWallets.map((wallet, index) => ({
-        '#': colors.muted(`${index + 1}`),
-        Name: wallet.isActive ? `${colors.primary(wallet.name)} ${icons.check}` : wallet.name,
-        Environment:
-          wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment),
-        Address: colors.muted(wallet.address),
-      }));
+      // Go straight to wallet selection
+      const choices: any[] = [];
+      let lastEnv: string | null = null;
 
-      table(walletData, ['#', 'Name', 'Environment', 'Address']);
-      console.log('');
+      // Find the longest wallet name for proper padding
+      const maxNameLength = Math.max(...sortedWallets.map((w) => w.name.length));
 
-      if (activeWallet) {
-        console.log(
-          `${icons.star} Current active wallet: ${colors.primary(activeWallet.name)} (${activeWallet.environment})`,
-        );
-      }
+      sortedWallets.forEach((wallet) => {
+        // Add separator when switching from production to sandbox
+        if (lastEnv === 'production' && wallet.environment === 'sandbox') {
+          choices.push(new inquirer.Separator(colors.muted('\n──── Sandbox Wallets ────')));
+        } else if (lastEnv === null && wallet.environment === 'production') {
+          choices.push(new inquirer.Separator(colors.muted('──── Production Wallets ────')));
+        } else if (lastEnv === null && wallet.environment === 'sandbox') {
+          choices.push(new inquirer.Separator(colors.muted('──── Sandbox Wallets ────')));
+        }
 
-      const { wantToSwitch } = await safePrompt([
+        const envIcon = '●';
+        const envColor = wallet.environment === 'production' ? colors.success : colors.warning;
+        const envLabel = wallet.environment === 'production' ? colors.success('[PROD]') : colors.warning('[TEST]');
+        const activeLabel = wallet.isActive ? colors.cyan(' ← current') : '';
+        const paddedName = wallet.name + ' '.repeat(Math.max(0, maxNameLength - wallet.name.length));
+
+        choices.push({
+          name: `  ${envColor(envIcon)}  ${paddedName}  ${envLabel}  ${colors.muted(wallet.address)}${activeLabel}`,
+          value: wallet.name,
+          short: wallet.name,
+        });
+
+        lastEnv = wallet.environment;
+      });
+
+      // Find the active wallet's name to set as default
+      const activeWalletName = sortedWallets.find((w) => w.isActive)?.name;
+
+      const { selectedWallet } = await safePrompt([
         {
-          type: 'confirm',
-          name: 'wantToSwitch',
-          message: 'Would you like to switch to a different wallet?',
-          default: false,
+          type: 'list',
+          name: 'selectedWallet',
+          message: 'Select a wallet:',
+          choices,
+          pageSize: 50,
+          default: activeWalletName,
         },
       ]);
 
-      if (wantToSwitch) {
-        const choices: any[] = [];
-        let lastEnv: string | null = null;
-
-        // Find the longest wallet name for proper padding
-        const maxNameLength = Math.max(...sortedWallets.map((w) => w.name.length));
-
-        sortedWallets.forEach((wallet) => {
-          // Add separator when switching from production to sandbox
-          if (lastEnv === 'production' && wallet.environment === 'sandbox') {
-            choices.push(new inquirer.Separator(colors.muted('\n──── Sandbox Wallets ────')));
-          } else if (lastEnv === null && wallet.environment === 'production') {
-            choices.push(new inquirer.Separator(colors.muted('──── Production Wallets ────')));
-          } else if (lastEnv === null && wallet.environment === 'sandbox') {
-            choices.push(new inquirer.Separator(colors.muted('──── Sandbox Wallets ────')));
-          }
-
-          const envIcon = wallet.environment === 'production' ? '●' : '○';
-          const envColor = wallet.environment === 'production' ? colors.success : colors.warning;
-          const envLabel = wallet.environment === 'production' ? colors.success('[PROD]') : colors.warning('[TEST]');
-          const activeLabel = wallet.isActive ? colors.cyan(' ← current') : '';
-          const paddedName = wallet.name + ' '.repeat(Math.max(0, maxNameLength - wallet.name.length));
-          const addressShort = `${wallet.address.slice(0, 10)}...${wallet.address.slice(-8)}`;
-
-          choices.push({
-            name: `  ${envColor(envIcon)}  ${paddedName}  ${envLabel}  ${colors.muted(addressShort)}${activeLabel}`,
-            value: wallet.name,
-            short: wallet.name,
-          });
-
-          lastEnv = wallet.environment;
-        });
-
-        const { selectedWallet } = await safePrompt([
-          {
-            type: 'list',
-            name: 'selectedWallet',
-            message: 'Select a wallet to switch to:',
-            choices,
-            pageSize: 15,
-          },
-        ]);
-
-        const wallet = wallets.find((w) => w.name === selectedWallet);
-        if (wallet) {
+      const wallet = wallets.find((w) => w.name === selectedWallet);
+      if (wallet) {
+        // Only update if switching to a different wallet
+        if (!wallet.isActive) {
           wallets.forEach((w) => {
             w.isActive = w.name === selectedWallet;
           });
@@ -1082,6 +1060,8 @@ program
             );
             console.log(`${icons.dot} Address: ${colors.muted(wallet.address)}`);
           }, 1200);
+        } else {
+          console.log(`\n${icons.info} Already using wallet: ${colors.primary(wallet.name)}`);
         }
       }
     } catch (error) {
@@ -1500,7 +1480,7 @@ program
       const result = (await response.json()) as { success: boolean; message: string; amount: number; txid: string };
 
       if (result.success) {
-        airdropAnim.stop(true);  // Stop with completion message
+        airdropAnim.stop(true); // Stop with completion message
 
         showBox(
           `${icons.money} ${colors.highlight('Tokens Received!')}\n\n` +
@@ -1513,7 +1493,7 @@ program
           'success',
         );
       } else {
-        airdropAnim.stop(false);  // Stop without completion
+        airdropAnim.stop(false); // Stop without completion
         console.error(`${icons.error} ${colors.error(result.message || 'Failed to request tokens')}`);
       }
     } catch (error: any) {

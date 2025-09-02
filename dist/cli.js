@@ -6,7 +6,7 @@ import { PrivateKey, Utils } from '@bsv/sdk';
 import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWalletByAddress, setPrivateKey, deletePrivateKey, getPrivateKey, clearActiveWallet, getLegacyWallet, deleteLegacyWallet, } from './utils/keytar.js';
 import { getVersion } from './utils/helper.js';
-import { colors, icons, createSpinner, showBox, formatAddress, formatAmount, formatLink, showWelcome, animateSuccess, startTransactionAnimation, startAirdropAnimation, table, } from './utils/ui.js';
+import { colors, icons, createSpinner, showBox, formatAddress, formatAmount, formatLink, showWelcome, animateSuccess, startTransactionAnimation, startAirdropAnimation, } from './utils/ui.js';
 import Mnee from 'mnee';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 const apiUrl = 'https://api-stg-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
@@ -742,16 +742,14 @@ program
 });
 program
     .command('list')
-    .description('List all your wallets and optionally switch to a different wallet')
+    .description('List and switch between your wallets')
     .action(async () => {
     try {
         const wallets = await getAllWallets();
-        const activeWallet = await getActiveWallet();
         if (wallets.length === 0) {
             console.log('\n❌ No wallets found. Run `mnee create` to create a wallet.');
             return;
         }
-        console.log(`\n${icons.wallet} ${colors.highlight('Your Wallets')}\n`);
         // Sort wallets: production first, then sandbox
         const sortedWallets = [...wallets].sort((a, b) => {
             if (a.environment === 'production' && b.environment === 'sandbox')
@@ -760,65 +758,50 @@ program
                 return 1;
             return 0;
         });
-        const walletData = sortedWallets.map((wallet, index) => ({
-            '#': colors.muted(`${index + 1}`),
-            Name: wallet.isActive ? `${colors.primary(wallet.name)} ${icons.check}` : wallet.name,
-            Environment: wallet.environment === 'production' ? colors.success(wallet.environment) : colors.warning(wallet.environment),
-            Address: colors.muted(wallet.address),
-        }));
-        table(walletData, ['#', 'Name', 'Environment', 'Address']);
-        console.log('');
-        if (activeWallet) {
-            console.log(`${icons.star} Current active wallet: ${colors.primary(activeWallet.name)} (${activeWallet.environment})`);
-        }
-        const { wantToSwitch } = await safePrompt([
+        // Go straight to wallet selection
+        const choices = [];
+        let lastEnv = null;
+        // Find the longest wallet name for proper padding
+        const maxNameLength = Math.max(...sortedWallets.map((w) => w.name.length));
+        sortedWallets.forEach((wallet) => {
+            // Add separator when switching from production to sandbox
+            if (lastEnv === 'production' && wallet.environment === 'sandbox') {
+                choices.push(new inquirer.Separator(colors.muted('\n──── Sandbox Wallets ────')));
+            }
+            else if (lastEnv === null && wallet.environment === 'production') {
+                choices.push(new inquirer.Separator(colors.muted('──── Production Wallets ────')));
+            }
+            else if (lastEnv === null && wallet.environment === 'sandbox') {
+                choices.push(new inquirer.Separator(colors.muted('──── Sandbox Wallets ────')));
+            }
+            const envIcon = '●';
+            const envColor = wallet.environment === 'production' ? colors.success : colors.warning;
+            const envLabel = wallet.environment === 'production' ? colors.success('[PROD]') : colors.warning('[TEST]');
+            const activeLabel = wallet.isActive ? colors.cyan(' ← current') : '';
+            const paddedName = wallet.name + ' '.repeat(Math.max(0, maxNameLength - wallet.name.length));
+            choices.push({
+                name: `  ${envColor(envIcon)}  ${paddedName}  ${envLabel}  ${colors.muted(wallet.address)}${activeLabel}`,
+                value: wallet.name,
+                short: wallet.name,
+            });
+            lastEnv = wallet.environment;
+        });
+        // Find the active wallet's name to set as default
+        const activeWalletName = sortedWallets.find((w) => w.isActive)?.name;
+        const { selectedWallet } = await safePrompt([
             {
-                type: 'confirm',
-                name: 'wantToSwitch',
-                message: 'Would you like to switch to a different wallet?',
-                default: false,
+                type: 'list',
+                name: 'selectedWallet',
+                message: 'Select a wallet:',
+                choices,
+                pageSize: 50,
+                default: activeWalletName,
             },
         ]);
-        if (wantToSwitch) {
-            const choices = [];
-            let lastEnv = null;
-            // Find the longest wallet name for proper padding
-            const maxNameLength = Math.max(...sortedWallets.map((w) => w.name.length));
-            sortedWallets.forEach((wallet) => {
-                // Add separator when switching from production to sandbox
-                if (lastEnv === 'production' && wallet.environment === 'sandbox') {
-                    choices.push(new inquirer.Separator(colors.muted('\n──── Sandbox Wallets ────')));
-                }
-                else if (lastEnv === null && wallet.environment === 'production') {
-                    choices.push(new inquirer.Separator(colors.muted('──── Production Wallets ────')));
-                }
-                else if (lastEnv === null && wallet.environment === 'sandbox') {
-                    choices.push(new inquirer.Separator(colors.muted('──── Sandbox Wallets ────')));
-                }
-                const envIcon = wallet.environment === 'production' ? '●' : '○';
-                const envColor = wallet.environment === 'production' ? colors.success : colors.warning;
-                const envLabel = wallet.environment === 'production' ? colors.success('[PROD]') : colors.warning('[TEST]');
-                const activeLabel = wallet.isActive ? colors.cyan(' ← current') : '';
-                const paddedName = wallet.name + ' '.repeat(Math.max(0, maxNameLength - wallet.name.length));
-                const addressShort = `${wallet.address.slice(0, 10)}...${wallet.address.slice(-8)}`;
-                choices.push({
-                    name: `  ${envColor(envIcon)}  ${paddedName}  ${envLabel}  ${colors.muted(addressShort)}${activeLabel}`,
-                    value: wallet.name,
-                    short: wallet.name,
-                });
-                lastEnv = wallet.environment;
-            });
-            const { selectedWallet } = await safePrompt([
-                {
-                    type: 'list',
-                    name: 'selectedWallet',
-                    message: 'Select a wallet to switch to:',
-                    choices,
-                    pageSize: 15,
-                },
-            ]);
-            const wallet = wallets.find((w) => w.name === selectedWallet);
-            if (wallet) {
+        const wallet = wallets.find((w) => w.name === selectedWallet);
+        if (wallet) {
+            // Only update if switching to a different wallet
+            if (!wallet.isActive) {
                 wallets.forEach((w) => {
                     w.isActive = w.name === selectedWallet;
                 });
@@ -831,6 +814,9 @@ program
                         : colors.warning(wallet.environment)}`);
                     console.log(`${icons.dot} Address: ${colors.muted(wallet.address)}`);
                 }, 1200);
+            }
+            else {
+                console.log(`\n${icons.info} Already using wallet: ${colors.primary(wallet.name)}`);
             }
         }
     }

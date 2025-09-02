@@ -66,7 +66,7 @@ export const showBanner = async () => {
                 // MNEE brand colors - yellowish orange gradient
                 const gradient = gradientString(['#FFA500', '#FFD700', '#FFC107', '#FF8C00']);
                 console.log(gradient.multiline(data));
-                console.log(colors.muted('  The most magical way to manage your MNEE USD tokens ') + icons.sparkle + '\n');
+                console.log(colors.muted('  Everything you need to manage your MNEE USD tokens ') + icons.sparkle + '\n');
             }
             resolve();
         });
@@ -161,32 +161,14 @@ export const animateSuccess = (message) => {
         process.stdout.write(`\r${icons.success} ${colors.success(message)}\n`);
     }, 1000);
 };
-export const showTransactionAnimation = async (showComplete = false) => {
-    const frames = [
-        '📡 Broadcasting...',
-        '📡 ▶ Broadcasting...',
-        '📡 ▶▶ Broadcasting...',
-        '📡 ▶▶▶ Broadcasting...',
-        '📡 ▶▶▶▶ Broadcasting...',
-        '📡 ▶▶▶▶▶ Broadcasting...',
-    ];
-    if (showComplete) {
-        frames.push('✅ ▶▶▶▶▶▶ Complete!');
-    }
-    for (const frame of frames) {
-        process.stdout.write(`\r${colors.primary(frame)}`);
-        await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    process.stdout.write('\r' + ' '.repeat(50) + '\r');
-};
 export const startTransactionAnimation = () => {
     const frames = [
-        '📡 Broadcasting...',
-        '📡 ▶ Broadcasting...',
-        '📡 ▶▶ Broadcasting...',
-        '📡 ▶▶▶ Broadcasting...',
-        '📡 ▶▶▶▶ Broadcasting...',
-        '📡 ▶▶▶▶▶ Broadcasting...',
+        '📡 Broadcasting ',
+        '📡 Broadcasting ▶',
+        '📡 Broadcasting ▶▶',
+        '📡 Broadcasting ▶▶▶',
+        '📡 Broadcasting ▶▶▶▶',
+        '📡 Broadcasting ▶▶▶▶▶',
     ];
     let i = 0;
     const interval = setInterval(() => {
@@ -196,26 +178,24 @@ export const startTransactionAnimation = () => {
     return {
         stop: (showComplete = false) => {
             clearInterval(interval);
+            process.stdout.write('\r' + ' '.repeat(50) + '\r');
             if (showComplete) {
                 process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Complete!')}`);
                 setTimeout(() => {
                     process.stdout.write('\r' + ' '.repeat(50) + '\r');
                 }, 1000);
             }
-            else {
-                process.stdout.write('\r' + ' '.repeat(50) + '\r');
-            }
-        }
+        },
     };
 };
 export const showAirdropAnimation = async (showComplete = false) => {
     const frames = [
-        '🪂 Requesting airdrop...',
-        '🪂 ▶ Requesting airdrop...',
-        '🪂 ▶▶ Requesting airdrop...',
-        '🪂 ▶▶▶ Requesting airdrop...',
-        '🪂 ▶▶▶▶ Requesting airdrop...',
-        '🪂 ▶▶▶▶▶ Requesting airdrop...',
+        '🪂 Requesting airdrop',
+        '🪂 Requesting airdrop ▶',
+        '🪂 Requesting airdrop ▶▶',
+        '🪂 Requesting airdrop ▶▶▶',
+        '🪂 Requesting airdrop ▶▶▶▶',
+        '🪂 Requesting airdrop ▶▶▶▶▶',
     ];
     if (showComplete) {
         frames.push('✅ ▶▶▶▶▶▶ Airdrop complete!');
@@ -243,16 +223,14 @@ export const startAirdropAnimation = () => {
     return {
         stop: (showComplete = false) => {
             clearInterval(interval);
+            process.stdout.write('\r' + ' '.repeat(50) + '\r');
             if (showComplete) {
                 process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Airdrop complete!')}`);
                 setTimeout(() => {
                     process.stdout.write('\r' + ' '.repeat(50) + '\r');
                 }, 1000);
             }
-            else {
-                process.stdout.write('\r' + ' '.repeat(50) + '\r');
-            }
-        }
+        },
     };
 };
 export const table = (data, columns) => {

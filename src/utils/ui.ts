@@ -74,7 +74,7 @@ export const showBanner = async () => {
           // MNEE brand colors - yellowish orange gradient
           const gradient = gradientString(['#FFA500', '#FFD700', '#FFC107', '#FF8C00']);
           console.log(gradient.multiline(data));
-          console.log(colors.muted('  The most magical way to manage your MNEE USD tokens ') + icons.sparkle + '\n');
+          console.log(colors.muted('  Everything you need to manage your MNEE USD tokens ') + icons.sparkle + '\n');
         }
         resolve();
       },
@@ -136,7 +136,7 @@ export const formatLink = (url: string, text?: string): string => {
   // Format: \x1b]8;;URL\x07TEXT\x1b]8;;\x07
   const displayText = text || url;
   const clickableLink = `\x1b]8;;${url}\x07${chalk.cyan.underline(displayText)}\x1b]8;;\x07`;
-  
+
   // Fallback for terminals that don't support OSC 8
   // They will just see the underlined cyan text
   return clickableLink;
@@ -194,35 +194,14 @@ export const animateSuccess = (message: string) => {
   }, 1000);
 };
 
-export const showTransactionAnimation = async (showComplete: boolean = false) => {
-  const frames = [
-    '📡 Broadcasting...',
-    '📡 ▶ Broadcasting...',
-    '📡 ▶▶ Broadcasting...',
-    '📡 ▶▶▶ Broadcasting...',
-    '📡 ▶▶▶▶ Broadcasting...',
-    '📡 ▶▶▶▶▶ Broadcasting...',
-  ];
-
-  if (showComplete) {
-    frames.push('✅ ▶▶▶▶▶▶ Complete!');
-  }
-
-  for (const frame of frames) {
-    process.stdout.write(`\r${colors.primary(frame)}`);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  process.stdout.write('\r' + ' '.repeat(50) + '\r');
-};
-
 export const startTransactionAnimation = () => {
   const frames = [
-    '📡 Broadcasting...',
-    '📡 ▶ Broadcasting...',
-    '📡 ▶▶ Broadcasting...',
-    '📡 ▶▶▶ Broadcasting...',
-    '📡 ▶▶▶▶ Broadcasting...',
-    '📡 ▶▶▶▶▶ Broadcasting...',
+    '📡 Broadcasting ',
+    '📡 Broadcasting ▶',
+    '📡 Broadcasting ▶▶',
+    '📡 Broadcasting ▶▶▶',
+    '📡 Broadcasting ▶▶▶▶',
+    '📡 Broadcasting ▶▶▶▶▶',
   ];
 
   let i = 0;
@@ -234,26 +213,25 @@ export const startTransactionAnimation = () => {
   return {
     stop: (showComplete: boolean = false) => {
       clearInterval(interval);
+      process.stdout.write('\r' + ' '.repeat(50) + '\r');
       if (showComplete) {
         process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Complete!')}`);
         setTimeout(() => {
           process.stdout.write('\r' + ' '.repeat(50) + '\r');
         }, 1000);
-      } else {
-        process.stdout.write('\r' + ' '.repeat(50) + '\r');
       }
-    }
+    },
   };
 };
 
 export const showAirdropAnimation = async (showComplete: boolean = false) => {
   const frames = [
-    '🪂 Requesting airdrop...',
-    '🪂 ▶ Requesting airdrop...',
-    '🪂 ▶▶ Requesting airdrop...',
-    '🪂 ▶▶▶ Requesting airdrop...',
-    '🪂 ▶▶▶▶ Requesting airdrop...',
-    '🪂 ▶▶▶▶▶ Requesting airdrop...',
+    '🪂 Requesting airdrop',
+    '🪂 Requesting airdrop ▶',
+    '🪂 Requesting airdrop ▶▶',
+    '🪂 Requesting airdrop ▶▶▶',
+    '🪂 Requesting airdrop ▶▶▶▶',
+    '🪂 Requesting airdrop ▶▶▶▶▶',
   ];
 
   if (showComplete) {
@@ -286,15 +264,14 @@ export const startAirdropAnimation = () => {
   return {
     stop: (showComplete: boolean = false) => {
       clearInterval(interval);
+      process.stdout.write('\r' + ' '.repeat(50) + '\r');
       if (showComplete) {
         process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Airdrop complete!')}`);
         setTimeout(() => {
           process.stdout.write('\r' + ' '.repeat(50) + '\r');
         }, 1000);
-      } else {
-        process.stdout.write('\r' + ' '.repeat(50) + '\r');
       }
-    }
+    },
   };
 };
 
