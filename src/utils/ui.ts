@@ -67,7 +67,7 @@ export const showBanner = async () => {
         horizontalLayout: 'default',
         verticalLayout: 'default',
       },
-      (err, data) => {
+      (err: any, data: string) => {
         if (!err && data) {
           // Add padding at the top
           console.log('\n');

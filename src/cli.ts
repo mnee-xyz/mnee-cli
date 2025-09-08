@@ -34,7 +34,7 @@ import {
   startTransactionAnimation,
   startAirdropAnimation,
 } from './utils/ui.js';
-import Mnee, { SendMNEE, TxHistory, TransferStatus } from 'mnee';
+import Mnee, { SendMNEE, TxHistory, TransferStatus } from '@mnee/ts-sdk';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 
 const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
