@@ -1,7 +1,10 @@
 {
-  "name": "mnee-cli",
-  "version": "1.3.0",
-  "description": "MNEE CLI tool",
+  "name": "@mnee/cli",
+  "publishConfig": {
+    "access": "public"
+  },
+  "version": "1.0.0",
+  "description": "Official CLI tool for MNEE wallet management, stablecoin transactions, and secure key storage",
   "main": "dist/cli.js",
   "type": "module",
   "scripts": {
@@ -31,10 +34,11 @@
     "stablecoin",
     "usd",
     "bsv",
-    "bitcoin"
+    "bitcoin",
+    "1satordinal"
   ],
-  "author": "Dan Wagner",
-  "license": "ISC",
+  "author": "MNEE",
+  "license": "MIT",
   "dependencies": {
     "@bsv/sdk": "^1.3.28",
     "axios": "^1.8.1",
