@@ -13,8 +13,7 @@
     "postbuild": "chmod +x dist/cli.js",
     "start": "node dist/cli.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublishOnly": "npm run build",
-    "dev-reset": "npm unlink mnee-cli && npm uninstall -g mnee-cli && npm run build && npm link"
+    "prepublishOnly": "npm run build"
   },
   "bin": {
     "mnee": "./dist/cli.js"
@@ -26,6 +25,10 @@
     "type": "git",
     "url": "git+https://github.com/mnee-xyz/mnee-cli"
   },
+  "bugs": {
+    "url": "https://github.com/mnee-xyz/mnee-cli/issues"
+  },
+  "homepage": "https://docs.mnee.io/dev-tools/mnee-cli",
   "keywords": [
     "cli",
     "mnee",
