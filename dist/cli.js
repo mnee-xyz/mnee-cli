@@ -245,12 +245,13 @@ program
     .description('Get transaction history with filtering options')
     .option('-u, --unconfirmed', 'Show only unconfirmed transactions')
     .option('-c, --confirmed', 'Show only confirmed transactions')
-    .option('-l, --limit <number>', 'Show only the N most recent transactions (e.g., -l 10)', parseInt)
+    .option('-l, --limit <number>', 'Show only the N most recent transactions (default: 10)', parseInt, 10)
     .option('-t, --type <type>', 'Filter by type: "send" or "receive"')
     .option('--txid <txid>', 'Search by transaction ID (partial match)')
     .option('--address <address>', 'Filter by counterparty address (partial match)')
     .option('--min <amount>', 'Show transactions >= amount (e.g., --min 0.5)', parseFloat)
     .option('--max <amount>', 'Show transactions <= amount (e.g., --max 100)', parseFloat)
+    .option('--all', 'Fetch complete transaction history (slower)')
     .action(async (options) => {
     const activeWallet = await getActiveWallet();
     if (!activeWallet) {
@@ -261,124 +262,127 @@ program
     spinner.start();
     try {
         const mneeInstance = getMneeInstance(activeWallet.environment);
-        let nextScore = undefined;
-        let hasMore = true;
         let history = [];
-        let attempts = 0;
-        const maxAttempts = 20; // Safety limit to prevent infinite loops
-        while (hasMore && attempts < maxAttempts) {
-            const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100, 'desc');
-            if (newNextScore === nextScore && newNextScore !== undefined)
+        let nextScore = undefined;
+        const limit = options.limit || 10;
+        const maxCalls = options.all ? 20 : (options.txid ? 5 : options.address ? 4 : 2);
+        const initialBatch = options.all
+            ? 100
+            : options.txid
+                ? 100
+                : options.address
+                    ? Math.max(limit * 3, 50)
+                    : Math.max(limit, 15);
+        const subsequentBatch = options.all ? 100 : options.txid ? 50 : 25;
+        const searchTxId = options.txid?.toLowerCase();
+        const searchAddress = options.address?.toLowerCase();
+        const searchType = options.type?.toLowerCase();
+        const filterTx = (tx) => {
+            if (options.unconfirmed && tx.status !== 'unconfirmed')
+                return false;
+            if (options.confirmed && tx.status !== 'confirmed')
+                return false;
+            if (searchType && tx.type !== searchType)
+                return false;
+            if (searchTxId && !tx.txid.toLowerCase().includes(searchTxId))
+                return false;
+            if (searchAddress && !tx.computedCounterparties.some((cp) => cp.address.toLowerCase().includes(searchAddress)))
+                return false;
+            if (options.min !== undefined && tx.computedAmount < options.min)
+                return false;
+            if (options.max !== undefined && tx.computedAmount > options.max)
+                return false;
+            return true;
+        };
+        const computeAmount = (tx, mneeInstance) => ({
+            ...tx,
+            computedAmount: mneeInstance.fromAtomicAmount(tx.amount || 0),
+            computedFee: mneeInstance.fromAtomicAmount(tx.fee || 0),
+            computedCounterparties: tx.counterparties?.map(cp => ({
+                ...cp,
+                computedAmount: mneeInstance.fromAtomicAmount(cp.amount || 0),
+            })) || []
+        });
+        let foundEnough = false;
+        let apiCalls = 0;
+        while (!foundEnough && apiCalls < maxCalls) {
+            const batchSize = apiCalls === 0 ? initialBatch : subsequentBatch;
+            const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, batchSize, 'desc');
+            apiCalls++;
+            if (newHistory.length === 0 || newNextScore === nextScore)
                 break;
-            history.push(...newHistory);
+            const enrichedNewHistory = newHistory.map((tx) => computeAmount(tx, mneeInstance));
+            history.push(...enrichedNewHistory);
             nextScore = newNextScore;
-            hasMore = nextScore !== 0 && nextScore !== undefined;
-            attempts++;
-        }
-        if (attempts >= maxAttempts) {
-            console.log('Reached maximum number of attempts. Some history may be missing.');
-        }
-        // Deduplicate transactions by txid (keep the one with the highest score)
-        const txMap = new Map();
-        history.forEach((tx) => {
-            const existing = txMap.get(tx.txid);
-            if (!existing || tx.score > existing.score) {
-                txMap.set(tx.txid, tx);
+            if (!options.all) {
+                if (searchTxId) {
+                    if (history.some(tx => tx.txid.toLowerCase().includes(searchTxId))) {
+                        foundEnough = true;
+                    }
+                }
+                else {
+                    const allFilteredSoFar = history.filter(filterTx);
+                    if (allFilteredSoFar.length >= limit) {
+                        foundEnough = true;
+                    }
+                }
             }
+            if (nextScore === 0 || nextScore === undefined)
+                break;
+            if (newHistory.length < batchSize * 0.5) {
+                const filteredCount = history.filter(filterTx).length;
+                if (filteredCount >= limit) {
+                    foundEnough = true;
+                }
+            }
+        }
+        const txMap = new Map();
+        history.forEach(tx => {
+            const existing = txMap.get(tx.txid);
+            if (!existing || tx.score > existing.score)
+                txMap.set(tx.txid, tx);
         });
         history = Array.from(txMap.values());
-        // Apply filters based on options
-        if (options.unconfirmed) {
-            history = history.filter((tx) => tx.status === 'unconfirmed');
-        }
-        else if (options.confirmed) {
-            history = history.filter((tx) => tx.status === 'confirmed');
-        }
-        // Filter by transaction type
-        if (options.type) {
-            const type = options.type.toLowerCase();
-            if (type === 'send' || type === 'receive') {
-                history = history.filter((tx) => tx.type === type);
-            }
-        }
-        // Filter by transaction ID (partial match)
-        if (options.txid) {
-            history = history.filter((tx) => tx.txid.toLowerCase().includes(options.txid.toLowerCase()));
-        }
-        // Filter by counterparty address
-        if (options.address) {
-            history = history.filter((tx) => tx.counterparties?.some((cp) => cp.address.toLowerCase().includes(options.address.toLowerCase())));
-        }
-        // Filter by amount range
-        if (options.min !== undefined || options.max !== undefined) {
-            history = history.filter((tx) => {
-                const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
-                if (options.min !== undefined && amount < options.min)
-                    return false;
-                if (options.max !== undefined && amount > options.max)
-                    return false;
-                return true;
-            });
-        }
-        // Apply limit if specified
+        history = history
+            .filter(filterTx)
+            .sort((a, b) => (b.score || 0) - (a.score || 0));
         if (options.limit && options.limit > 0) {
             history = history.slice(0, options.limit);
         }
         spinner.stop();
-        // Display formatted history
         if (history.length === 0) {
             showBox(`${icons.info} No transactions found`, 'Transaction History', 'info');
+            return;
         }
-        else {
-            // Sort transactions by score (newest first)
-            history.sort((a, b) => (b.score || 0) - (a.score || 0));
-            console.log('');
-            console.log(colors.highlight(`${icons.time} Transaction History`));
-            console.log(colors.muted('─'.repeat(60)));
-            console.log('');
-            // Display transactions
-            history.forEach((tx, index) => {
-                // Transaction type and styling
-                const type = tx.type || 'unknown';
-                const icon = type === 'send' ? icons.send : type === 'receive' ? icons.receive : icons.dot;
-                const color = type === 'send' ? colors.error : type === 'receive' ? colors.success : colors.muted;
-                // Convert amount and fee from atomic units
-                const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
-                const fee = mneeInstance.fromAtomicAmount(tx.fee || 0);
-                // Status indicator
-                const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
-                const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('unconfirmed');
-                // Block height
-                const heightDisplay = tx.height ? `block ${tx.height}` : '';
-                // Format the main transaction line
-                console.log(`  ${icon} ${color(type.toUpperCase().padEnd(8))} ${formatAmount(amount).padEnd(22)} ${statusIcon} ${statusText}`);
-                // Show fee if it exists
-                if (fee > 0) {
-                    console.log(`     ${colors.muted('fee:')} ${formatAmount(fee)}`);
-                }
-                // Show all counterparties
-                if (tx.counterparties && tx.counterparties.length > 0) {
-                    tx.counterparties.forEach((cp) => {
-                        const cpAmount = mneeInstance.fromAtomicAmount(cp.amount || 0);
-                        console.log(`     ${colors.muted(type === 'send' ? 'to:' : 'from:')} ${colors.muted(cp.address)} ${formatAmount(cpAmount)}`);
-                    });
-                }
-                // Show block height
-                if (heightDisplay) {
-                    console.log(`     ${colors.muted(heightDisplay)}`);
-                }
-                // Show transaction ID
-                console.log(`     ${colors.muted(`tx: ${tx.txid}`)}`);
-                // Add separator between transactions (except for the last one)
-                if (index < history.length - 1) {
-                    console.log(colors.muted('     ' + '·'.repeat(50)));
-                }
-                console.log('');
+        console.log('');
+        console.log(colors.highlight(`${icons.time} Transaction History`));
+        console.log(colors.muted('─'.repeat(60)));
+        console.log('');
+        history.forEach((tx, index) => {
+            const type = tx.type || 'unknown';
+            const icon = type === 'send' ? icons.send : type === 'receive' ? icons.receive : icons.dot;
+            const color = type === 'send' ? colors.error : type === 'receive' ? colors.success : colors.muted;
+            const amount = tx.computedAmount;
+            const fee = tx.computedFee;
+            const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
+            const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('unconfirmed');
+            const heightDisplay = tx.height ? `block ${tx.height}` : '';
+            console.log(`  ${icon} ${color(type.toUpperCase().padEnd(8))} ${formatAmount(amount).padEnd(22)} ${statusIcon} ${statusText}`);
+            if (fee > 0)
+                console.log(`     ${colors.muted('fee:')} ${formatAmount(fee)}`);
+            tx.computedCounterparties.forEach((cp) => {
+                console.log(`     ${colors.muted(type === 'send' ? 'to:' : 'from:')} ${colors.muted(cp.address)} ${formatAmount(cp.computedAmount)}`);
             });
-            console.log(colors.muted('─'.repeat(60)));
-            console.log(colors.muted(`  Total: ${history.length} transaction${history.length !== 1 ? 's' : ''}`));
+            if (heightDisplay)
+                console.log(`     ${colors.muted(heightDisplay)}`);
+            console.log(`     ${colors.muted(`tx: ${tx.txid}`)}`);
+            if (index < history.length - 1)
+                console.log(colors.muted('     ' + '·'.repeat(50)));
             console.log('');
-        }
+        });
+        console.log(colors.muted('─'.repeat(60)));
+        console.log(colors.muted(`  Total: ${history.length} tx`));
+        console.log('');
     }
     catch (error) {
         spinner.fail(colors.error('Error fetching history'));
