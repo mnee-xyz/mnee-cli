@@ -4,6 +4,8 @@ import boxen from 'boxen';
 import figlet from 'figlet';
 import gradientString from 'gradient-string';
 import cliProgress from 'cli-progress';
+import figures from 'figures';
+import cliSpinners from 'cli-spinners';
 // Check if we should use colors (respects NO_COLOR env variable and terminal capabilities)
 // This helps ensure the CLI works well in various terminal environments
 const shouldUseColor = !process.env.NO_COLOR && process.stdout.isTTY;
@@ -21,35 +23,30 @@ export const colors = {
     bold: chalk.bold,
 };
 export const icons = {
-    success: '✅',
-    error: '❌',
-    warning: '⚠️',
-    info: 'ℹ️',
+    success: figures.tick,
+    error: figures.lineCross,
+    warning: figures.warning,
+    info: figures.info,
     wallet: '💰',
+    pointer: figures.pointer,
     key: '🔑',
     lock: '🔒',
     unlock: '🔓',
     money: '💵',
-    send: '↗',
-    receive: '↙',
+    send: figures.arrowUp,
+    receive: figures.arrowDown,
     time: '⏱️',
-    check: '✓',
-    cross: '✗',
-    arrow: '→',
-    dot: '•',
-    star: '⭐',
-    sparkle: '✨',
-    rocket: '🚀',
-    shield: '🛡️',
-    diamond: '💎',
+    check: figures.tick,
+    cross: figures.lineCross,
+    arrow: figures.arrowRight,
+    arrowright: figures.arrowRight,
+    dot: figures.bullet,
+    star: figures.star
 };
 export const createSpinner = (text) => {
     return ora({
-        text,
-        spinner: {
-            interval: 80,
-            frames: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
-        },
+        text: `${colors.primary(text)}`,
+        spinner: cliSpinners.line,
         color: 'cyan',
     });
 };
@@ -66,7 +63,7 @@ export const showBanner = async () => {
                 // MNEE brand colors - yellowish orange gradient
                 const gradient = gradientString(['#FFA500', '#FFD700', '#FFC107', '#FF8C00']);
                 console.log(gradient.multiline(data));
-                console.log(colors.muted('  Everything you need to manage your MNEE USD tokens ') + icons.sparkle + '\n');
+                console.log(colors.muted('  Everything you need to manage your MNEE USD tokens ') + '\n');
             }
             resolve();
         });
@@ -125,65 +122,56 @@ export const formatTransaction = (type, amount, address) => {
 };
 export const showWelcome = async () => {
     await showBanner();
+    const quickStartCommands = [
+        { cmd: 'mnee create', desc: 'Create a new wallet' },
+        { cmd: 'mnee list', desc: 'Show all your wallets' },
+        { cmd: 'mnee send', desc: 'Transfer tokens' },
+        { cmd: 'mnee --help', desc: 'Show all commands' },
+    ];
+    const maxCmdLength = Math.max(...quickStartCommands.map((x) => x.cmd.length));
+    const commandLines = quickStartCommands
+        .map((item) => `${colors.cyan(item.cmd.padEnd(maxCmdLength))} ${colors.muted(`${icons.arrow} ${item.desc}`)}`)
+        .join('\n');
     const content = [
-        `${icons.rocket} ${colors.highlight('Welcome to MNEE CLI!')}`,
+        `${colors.cyan.bold('Welcome to MNEE CLI')}`,
         '',
-        `${icons.wallet} Manage wallets with ease`,
-        `${icons.money} Transfer tokens instantly`,
-        `${icons.shield} Secure key management`,
-        `${icons.diamond} Built for the future of money`,
+        `${icons.pointer} Manage wallets with ease`,
+        `${icons.pointer} Transfer tokens instantly`,
+        `${icons.pointer} Secure key management`,
+        `${icons.pointer} Built for the future of money`,
         '',
         colors.muted('─────────────────────────────'),
         '',
-        `${colors.primary('Quick Start:')}`,
-        `${colors.cyan('mnee create')}  ${colors.muted('→ New wallet')}`,
-        `${colors.cyan('mnee list')}    ${colors.muted('→ Your wallets')}`,
-        `${colors.cyan('mnee --help')} ${colors.muted('→ All commands')}`,
+        `${colors.primary.bold('Quick Start:')}`,
+        commandLines,
     ].join('\n');
     console.log(boxen(content, {
         padding: 1,
         margin: 1,
         borderStyle: 'double',
         borderColor: 'yellow',
-        textAlignment: 'center',
-        width: 52,
+        textAlignment: 'left',
+        width: 50,
     }));
 };
 export const animateSuccess = (message) => {
-    const frames = ['🎯', '🎉', '✨', '🎊', '🌟', '⭐', '✅'];
-    let i = 0;
-    const interval = setInterval(() => {
-        process.stdout.write(`\r${frames[i]} ${colors.success(message)}`);
-        i = (i + 1) % frames.length;
-    }, 100);
     setTimeout(() => {
-        clearInterval(interval);
         process.stdout.write(`\r${icons.success} ${colors.success(message)}\n`);
     }, 1000);
 };
 export const startTransactionAnimation = () => {
-    const frames = [
-        '📡 Broadcasting ',
-        '📡 Broadcasting ▶',
-        '📡 Broadcasting ▶▶',
-        '📡 Broadcasting ▶▶▶',
-        '📡 Broadcasting ▶▶▶▶',
-        '📡 Broadcasting ▶▶▶▶▶',
-    ];
+    const frames = ['Broadcasting ▶', 'Broadcasting ▶▶', 'Broadcasting ▶▶▶'];
     let i = 0;
     const interval = setInterval(() => {
         process.stdout.write(`\r${colors.primary(frames[i])}`);
         i = (i + 1) % frames.length;
-    }, 200);
+    }, 250);
     return {
         stop: (showComplete = false) => {
             clearInterval(interval);
             process.stdout.write('\r' + ' '.repeat(50) + '\r');
             if (showComplete) {
-                process.stdout.write(`\r${colors.success('✅ ▶▶▶▶▶▶ Complete!')}`);
-                setTimeout(() => {
-                    process.stdout.write('\r' + ' '.repeat(50) + '\r');
-                }, 1000);
+                process.stdout.write(`\r${colors.success(`${icons.success} Broadcast Complete`)}\n`);
             }
         },
     };
@@ -234,34 +222,28 @@ export const startAirdropAnimation = () => {
     };
 };
 export const table = (data, columns) => {
-    // Calculate the actual display width, accounting for ANSI color codes
-    const stripAnsi = (str) => {
-        return str.replace(/\x1b\[[0-9;]*m/g, '');
-    };
-    const getDisplayLength = (str) => {
-        return stripAnsi(str).length;
-    };
-    // Calculate max widths based on actual display width
+    const stripAnsi = (str) => str.replace(/\x1b\[[0-9;]*m/g, '');
+    const getDisplayLength = (str) => stripAnsi(str).length;
     const maxWidths = columns.map((col) => {
         const headerWidth = getDisplayLength(col);
         const dataWidths = data.map((row) => getDisplayLength(String(row[col] || '')));
         return Math.max(headerWidth, ...dataWidths);
     });
-    // Pad string to a specific display width, accounting for ANSI codes
     const padToWidth = (str, width) => {
         const actualLength = getDisplayLength(str);
         const padding = width - actualLength;
         return str + ' '.repeat(Math.max(0, padding));
     };
-    // Build and print header
-    const header = columns.map((col, i) => padToWidth(colors.highlight(col), maxWidths[i])).join(' │ ');
-    console.log(header);
-    // Build and print separator
+    const header = columns
+        .map((col, i) => colors.bold.cyan(padToWidth(col, maxWidths[i])))
+        .join(' │ ');
     const separator = maxWidths.map((w) => '─'.repeat(w)).join('─┼─');
+    console.log(header);
     console.log(colors.muted(separator));
-    // Build and print data rows
     data.forEach((row) => {
-        const rowStr = columns.map((col, i) => padToWidth(String(row[col] || ''), maxWidths[i])).join(' │ ');
+        const rowStr = columns
+            .map((col, i) => padToWidth(String(row[col] || ''), maxWidths[i]))
+            .join(' │ ');
         console.log(rowStr);
     });
 };

@@ -224,7 +224,7 @@ program
       ]);
 
       if (password !== confirmPassword) {
-        console.error('❌ Passwords do not match. Try again.');
+        console.error(`${icons.cross} Passwords do not match. Try again.`);
         return;
       }
 
@@ -321,7 +321,7 @@ program
       const mneeInstance = getMneeInstance(activeWallet.environment);
       const { decimalAmount } = await mneeInstance.balance(activeWallet.address);
 
-      spinner.succeed(`Balance retrieved!`);
+      spinner.succeed(`Balance retrieved`);
 
       showBox(
         `${icons.money} ${colors.highlight('Wallet Balance')}\n\n` +
@@ -626,13 +626,13 @@ program
 
       const encryptedKey = await getPrivateKey(activeWallet.address);
       if (!encryptedKey) {
-        console.error('❌ Private key not found for this wallet.');
+        console.error(`${icons.warning} Private key not found for this wallet.`);
         return;
       }
 
       const privateKeyHex = decryptPrivateKey(encryptedKey, password);
       if (!privateKeyHex) {
-        console.error('❌ Incorrect password! Decryption failed.');
+        console.error(`${icons.warning} Incorrect password! Decryption failed.`);
         return;
       }
 
@@ -654,7 +654,7 @@ program
 
           // Show initial success message
           console.log(
-            `${colors.success('✓')} ${colors.primary('Transfer initiated!')} ${colors.muted(
+            `${colors.success('✓')} ${colors.primary('Transfer initiated')} ${colors.muted(
               `Ticket: ${response.ticketId}`,
             )}`,
           );
@@ -821,7 +821,7 @@ program
       const encryptedKey = await getPrivateKey(activeWallet.address);
 
       if (!encryptedKey) {
-        console.error('❌ Private key not found for this wallet.');
+        console.error(`${icons.warning} Private key not found for this wallet.`);
         return;
       }
 
@@ -835,13 +835,13 @@ program
       ]);
 
       if (!confirm) {
-        console.log('🚫 Operation cancelled.');
+        console.log(`${icons.cross} Operation cancelled.`);
         return;
       }
 
       const privateKeyHex = decryptPrivateKey(encryptedKey, password);
       if (!privateKeyHex) {
-        console.error('❌ Incorrect password! Decryption failed.');
+        console.error(`${icons.error} Incorrect password! Decryption failed.`);
         return;
       }
 
@@ -878,7 +878,7 @@ program
       const activeWallet = await getActiveWallet();
 
       if (wallets.length === 0) {
-        console.error('❌ No wallets found.');
+        console.error(`${icons.error} No wallets found.`);
         return;
       }
 
@@ -887,14 +887,14 @@ program
       }
 
       if (!walletName) {
-        console.error('❌ No wallet specified and no active wallet found.');
+        console.error(`${icons.error} No wallet specified and no active wallet found.`);
         return;
       }
 
       const wallet = wallets.find((w) => w.name === walletName);
 
       if (!wallet) {
-        console.error(`❌ Wallet "${walletName}" not found.`);
+        console.error(`${icons.error} Wallet "${walletName}" not found.`);
         return;
       }
 
@@ -908,13 +908,13 @@ program
       ]);
 
       if (!confirm) {
-        console.log('🚫 Operation cancelled.');
+        console.log(` ${icons.warning} Operation cancelled.`);
         return;
       }
 
       const encryptedKey = await getPrivateKey(wallet.address);
       if (!encryptedKey) {
-        console.error('❌ Private key not found for this wallet.');
+        console.error(`${icons.error} Private key not found for this wallet.`);
         return;
       }
 
@@ -931,12 +931,12 @@ program
       try {
         decryptedKey = decryptPrivateKey(encryptedKey, password);
       } catch (error) {
-        console.error('❌ Incorrect password! Deletion cancelled.');
+        console.error(`${icons.error} Incorrect password! Deletion cancelled.`);
         return;
       }
 
       if (!decryptedKey) {
-        console.error('❌ Password verification failed. Deletion cancelled.');
+        console.error(`${icons.error} Password verification failed. Deletion cancelled.`);
         return;
       }
 
@@ -946,10 +946,10 @@ program
         if (updatedWallets.length > 0) {
           updatedWallets[0].isActive = true;
           await setActiveWallet(updatedWallets[0]);
-          console.log(`\n✅ Active wallet switched to: ${updatedWallets[0].name}`);
+          console.log(`\n${icons.success} Active wallet switched to: ${updatedWallets[0].name}`);
         } else {
           await clearActiveWallet();
-          console.log('\nℹ️ No active wallet set. Create a new wallet with `mnee create`.');
+          console.log(`\n${icons.info} No active wallet set. Create a new wallet with ${colors.highlight('mnee create')}.`);
         }
       }
 
@@ -973,7 +973,7 @@ program
       const wallets = await getAllWallets();
 
       if (wallets.length === 0) {
-        console.log('\n❌ No wallets found. Run `mnee create` to create a wallet.');
+        console.log(`\n${icons.warning} No wallets found. Run ${colors.highlight('mnee create')} to create a wallet.`);
         return;
       }
 
@@ -1065,18 +1065,22 @@ program
   .command('use <walletName>')
   .description('Switch to a different wallet')
   .action(async (walletName) => {
+    const spinner = createSpinner(
+      `Switching to ${walletName}...`
+    );
+    spinner.start();
     try {
       const wallets = await getAllWallets();
 
       if (wallets.length === 0) {
-        console.error('❌ No wallets found. Run `mnee create` to create a wallet.');
+        console.error(`${icons.error} No wallets found. Run ${colors.highlight('mnee create')} to create a wallet.`);
         return;
       }
 
       const wallet = wallets.find((w) => w.name.toLowerCase() === walletName.toLowerCase());
 
       if (!wallet) {
-        console.error(`❌ Wallet "${walletName}" not found.`);
+        console.error(`${icons.error} Wallet "${walletName}" not found.`);
         console.log('\nAvailable wallets:');
         wallets.forEach((w) => {
           console.log(`  - ${w.name} (${w.environment})`);
@@ -1091,11 +1095,11 @@ program
 
       await saveWallets(wallets);
       await setActiveWallet(wallet);
-
-      animateSuccess(`Switched to wallet: ${wallet.name}`);
+      spinner.stop();
       setTimeout(() => {
         console.log(
-          `${icons.dot} Environment: ${
+          `${icons.success} Switched to wallet: ${colors.highlight(wallet.name)}․ ` +
+          `Environment: ${
             wallet.environment === 'production'
               ? colors.success(wallet.environment)
               : colors.warning(wallet.environment)
@@ -1115,27 +1119,27 @@ program
     try {
       const validation = validateWalletName(newName);
       if (!validation.isValid) {
-        console.error(`❌ ${validation.error}`);
+        console.error(`${icons.error} ${validation.error}`);
         return;
       }
 
       const wallets = await getAllWallets();
 
       if (wallets.length === 0) {
-        console.error('❌ No wallets found. Run `mnee create` to create a wallet.');
+        console.error(`${icons.error} No wallets found. Run ${colors.highlight('mnee create')} to create a wallet.`);
         return;
       }
 
       const wallet = wallets.find((w) => w.name.toLowerCase() === oldName.toLowerCase());
 
       if (!wallet) {
-        console.error(`❌ Wallet "${oldName}" not found.`);
+        console.error(`${icons.error} Wallet "${oldName}" not found.`);
         console.log('Run `mnee list` to see your available wallets.');
         return;
       }
 
       if (wallets.some((w) => w.name.toLowerCase() === newName.toLowerCase() && w.name !== oldName)) {
-        console.error(`❌ A wallet with name "${newName}" already exists (names are case-insensitive).`);
+        console.error(`${icons.warning} A wallet with name "${newName}" already exists (names are case-insensitive).`);
         return;
       }
 
@@ -1192,7 +1196,7 @@ program
       try {
         privateKey = PrivateKey.fromWif(wifKey);
       } catch (error) {
-        console.error('❌ Invalid WIF key. Please check and try again.');
+        console.error(`${icons.warning} Invalid WIF key. Please check and try again.`);
         return;
       }
 
@@ -1201,7 +1205,7 @@ program
       // Check if wallet with this address already exists
       const existingWallet = await getWalletByAddress(address);
       if (existingWallet) {
-        console.error(`\n❌ A wallet with address ${address} already exists.`);
+        console.error(`\n${icons.warning} A wallet with address ${address} already exists.`);
         console.log(`\nTo use this wallet, run: mnee use ${existingWallet.name}`);
         return;
       }
@@ -1270,7 +1274,7 @@ program
       ]);
 
       if (password !== confirmPassword) {
-        console.error('❌ Passwords do not match. Try again.');
+        console.error(`${icons.warning} Passwords do not match. Try again.`);
         return;
       }
 
@@ -1325,12 +1329,12 @@ program
         try {
           // Validate the token is still valid
           const profile = await getProfile(apiUrl, config.token);
-          console.log(`\n✅ Already logged in as ${profile.email}`);
+          console.log(`\n${icons.success} Already logged in as ${profile.email}`);
           console.log('\nTo log in as a different user, run `mnee logout` first.');
           return;
         } catch (error) {
           // Token is invalid, continue with login flow
-          console.log('⚠️  Previous session expired. Starting new authentication...\n');
+          console.log(`${icons.warning} Previous session expired. Starting new authentication...\n`);
         }
       }
 
@@ -1373,7 +1377,7 @@ program
       const config = await loadConfig();
 
       if (!config.token) {
-        console.log('ℹ️ Not logged in.');
+        console.log(`${icons.info} Not logged in.`);
         return;
       }
 
@@ -1397,7 +1401,7 @@ program
       const config = await loadConfig();
 
       if (!config.token) {
-        console.log('❌ Not logged in. Run `mnee login` to authenticate.');
+        console.log(`${icons.warning} Not logged in. Run ${colors.highlight('mnee login')} to authenticate.`);
         return;
       }
 
@@ -1412,7 +1416,7 @@ program
           'info',
         );
       } catch (error) {
-        console.error('❌ Failed to get user profile. Your session may have expired.');
+        console.error(`${icons.error} Failed to get user profile. Your session may have expired.`);
         console.log('Run `mnee login` to authenticate again.');
       }
     } catch (error: any) {
@@ -1439,7 +1443,7 @@ program
       const config = await loadConfig();
 
       if (!config.token) {
-        console.log('❌ Not logged in. Run `mnee login` to authenticate.');
+        console.log(`${icons.warning} Not logged in. Run ${colors.highlight('mnee login')} to authenticate.`);
         return;
       }
 
@@ -1452,7 +1456,7 @@ program
       }
 
       if (activeWallet.environment === 'production') {
-        console.log('❌ The faucet is only available in sandbox mode.');
+        console.log(`${icons.warning} The faucet is only available in sandbox mode.`);
         console.log('Production tokens must be purchased.');
         return;
       }
@@ -1511,7 +1515,7 @@ const migrateOldWallets = async (): Promise<void> => {
     const alreadyMigrated = addresses.includes(oldAddress.trim());
 
     if (alreadyMigrated) {
-      console.log('ℹ️ Legacy wallet already exists in new format. Skipping migration.');
+      console.log(`${icons.info} Legacy wallet already exists in new format. Skipping migration.`);
       await deleteLegacyWallet();
       return;
     }
@@ -1526,7 +1530,7 @@ const migrateOldWallets = async (): Promise<void> => {
     ]);
 
     if (!confirm) {
-      console.log('🚫 Migration cancelled.');
+      console.log(`${icons.error} Migration cancelled.`);
       return;
     }
 
@@ -1541,7 +1545,7 @@ const migrateOldWallets = async (): Promise<void> => {
 
     const decryptedKey = decryptPrivateKey(oldEncryptedKey, password);
     if (!decryptedKey) {
-      console.error('❌ Failed to decrypt old private key. Migration aborted.');
+      console.error(`${icons.error} Failed to decrypt old private key. Migration aborted.`);
       return;
     }
 
@@ -1571,14 +1575,14 @@ const migrateOldWallets = async (): Promise<void> => {
     await setPrivateKey(oldAddress, reEncryptedKey);
     await deleteLegacyWallet();
 
-    console.log(`✅ Migration complete! Wallet added as "${name}".`);
+    console.log(`${icons.success} Migration complete! Wallet added as "${name}".`);
     if (newWallet.isActive) {
       console.log('This wallet is now your active wallet.');
     } else {
       console.log(`To use it, run: mnee use ${name}`);
     }
   } catch (error) {
-    console.error('\n❌ Error during wallet migration:', error);
+    console.error(`\n${icons.error} Error during wallet migration:`, error);
   }
 };
 
