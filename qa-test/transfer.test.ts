@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import chalk from 'chalk';
 import { getActiveWallet, getAllWallets } from '../dist/utils/keytar.js';
 import 'dotenv/config';
 
@@ -17,6 +16,8 @@ const WALLET_PASSWORD = process.env.WALLET_PASSWORD ?? '';
 
 // Store transfer results
 let transferTicketId: string | null = null;
+let transferOutput = '';
+let statusOutput = '';
 
 async function executeCLI(command: string) {
   try {
@@ -61,129 +62,103 @@ async function executeCLIWithInput(command: string, inputs: string[]) {
   });
 }
 
-test('🔧 Transfer Command - Prerequisites', async (t) => {
-  console.log(chalk.cyan('\n=== Checking prerequisites ==='));
-
-  await t.test('Wallet and environment check', async () => {
+test('Transfer Prerequisites', async (t) => {
+  await t.test('should have wallet and environment configured', async () => {
     const wallets = await getAllWallets();
-    assert.ok(wallets.length > 0, 'At least one wallet should exist.');
-    console.log(chalk.white(`Found ${wallets.length} wallet(s)`));
+    assert.ok(wallets.length > 0, 'At least one wallet should exist');
 
     const activeWallet = await getActiveWallet();
-    assert.ok(activeWallet, 'Active wallet must be set.');
+    assert.ok(activeWallet, 'Active wallet must be set');
     assert.strictEqual(
       activeWallet?.environment,
       'sandbox',
       'Active wallet should be in sandbox environment'
     );
-    console.log(chalk.white(`Active wallet: ${activeWallet.name}`));
-    console.log(chalk.gray(`Address: ${activeWallet.address}`));
   });
 
-  await t.test('Password environment variable', async () => {
-    assert.ok(
-      WALLET_PASSWORD,
-      'WALLET_PASSWORD must be set in environment'
-    );
-    console.log(chalk.white('✓ Password environment variable is set'));
+  await t.test('should have password environment variable', async () => {
+    assert.ok(WALLET_PASSWORD, 'WALLET_PASSWORD must be set in environment');
   });
 });
 
-test('🔧 Transfer Command - Input Validation', async (t) => {
-  console.log(chalk.cyan('\n=== Testing input validation ==='));
-
-  await t.test('Invalid amount - zero', async () => {
+test('Transfer Input Validation', async (t) => {
+  await t.test('should reject zero amount', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} 0 ${TEST_RECIPIENT}`);
     const output = result.stdout || result.stderr;
     assert.ok(
       output.includes('Amount must be greater than 0') || !result.success,
       'Should reject zero amount'
     );
-    console.log(chalk.white('✓ Zero amount rejected'));
   });
 
-  await t.test('Invalid amount - negative', async () => {
+  await t.test('should reject negative amount', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} -5 ${TEST_RECIPIENT}`);
     const output = result.stdout || result.stderr;
     assert.ok(
       output.includes('Amount must be greater than 0') || !result.success,
       'Should reject negative amount'
     );
-    console.log(chalk.white('✓ Negative amount rejected'));
   });
 
-  await t.test('Invalid amount - below minimum', async () => {
+  await t.test('should reject amount below minimum', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} 0.000001 ${TEST_RECIPIENT}`);
     const output = result.stdout || result.stderr;
     assert.ok(
       output.includes('Amount must be at least 0.00001') || !result.success,
       'Should reject amount below minimum'
     );
-    console.log(chalk.white('✓ Below minimum amount rejected'));
   });
 
-  await t.test('Invalid amount - non-numeric', async () => {
+  await t.test('should reject non-numeric amount', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} abc ${TEST_RECIPIENT}`);
     const output = result.stdout || result.stderr;
     assert.ok(
       output.includes('Invalid amount') || !result.success,
       'Should reject non-numeric amount'
     );
-    console.log(chalk.white('✓ Non-numeric amount rejected'));
   });
 
-  await t.test('Invalid address - malformed', async () => {
+  await t.test('should reject malformed address', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} ${TEST_AMOUNT} invalid_address`);
     const output = result.stdout || result.stderr;
     assert.ok(
       output.includes('Invalid') || !result.success,
       'Should reject malformed address'
     );
-    console.log(chalk.white('✓ Malformed address rejected'));
   });
 
-  await t.test('Valid scientific notation', async () => {
+  await t.test('should accept scientific notation', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} 1e-4 ${TEST_RECIPIENT}`);
     const output = result.stdout || result.stderr;
     assert.ok(
       !output.includes('Invalid amount'),
       'Should accept scientific notation'
     );
-    console.log(chalk.white('✓ Scientific notation accepted'));
   });
 });
 
-test('🔧 Transfer Command - Successful Transfer', async (t) => {
-  console.log(chalk.cyan('\n=== Testing successful transfer ==='));
-
+test('Transfer Execution', async (t) => {
   let activeWallet: any;
 
   await t.before(async () => {
     activeWallet = await getActiveWallet();
-    if (!activeWallet) throw new Error('No active wallet found.');
+    if (!activeWallet) throw new Error('No active wallet found');
   });
 
-  await t.test('Execute transfer and capture ticket ID', async () => {
-    console.log(chalk.yellow('\n📤 Initiating transfer...'));
-    console.log(chalk.gray(`   Amount: ${TEST_AMOUNT} MNEE`));
-    console.log(chalk.gray(`   To: ${TEST_RECIPIENT}`));
-    console.log(chalk.gray(`   From: ${activeWallet.name}`));
-
+  await t.test('should execute transfer and capture ticket ID', async () => {
     const result: any = await executeCLIWithInput(
       `${TRANSFER_COMMAND} ${TEST_AMOUNT} ${TEST_RECIPIENT}`,
       [WALLET_PASSWORD]
     );
 
     const output = result.stdout || result.stderr;
-    console.log(chalk.yellow('\n📊 Transfer Output:\n'));
-    console.log(output);
+    transferOutput = output; // Store for summary
 
     // Extract Ticket ID
     const ticketMatch = output.match(/Ticket:\s*([0-9a-fA-F-]{36})/);
     
     if (ticketMatch) {
       transferTicketId = ticketMatch[1];
-      console.log(chalk.green(`\n✓ Ticket ID captured: ${transferTicketId}`));
     }
 
     // Verify success
@@ -192,13 +167,9 @@ test('🔧 Transfer Command - Successful Transfer', async (t) => {
     assert.ok(isSuccess, 'Transfer should complete successfully');
     assert.ok(transferTicketId, 'Should receive ticket ID');
     assert.ok(!output.includes('Incorrect password'), 'Password should be correct');
-    
-    if (isSuccess) {
-      console.log(chalk.green('\n✅ Transfer successful!'));
-    }
   });
 
-  await t.test('Verify transaction details in output', async () => {
+  await t.test('should include transaction details in output', async () => {
     const result: any = await executeCLIWithInput(
       `${TRANSFER_COMMAND} ${TEST_AMOUNT} ${TEST_RECIPIENT}`,
       [WALLET_PASSWORD]
@@ -213,47 +184,31 @@ test('🔧 Transfer Command - Successful Transfer', async (t) => {
       output.includes(TEST_RECIPIENT) || output.includes('To:'),
       'Output should contain recipient address'
     );
-    console.log(chalk.white('✓ Transaction details verified'));
   });
 });
 
-test('🔧 Transaction Status - Check Transfer Status', async (t) => {
-  console.log(chalk.cyan('\n=== Testing transaction status check ==='));
-
-  await t.test('Ticket ID is available from transfer', async () => {
-    assert.ok(
-      transferTicketId,
-      'Ticket ID should be captured from transfer test'
-    );
-    console.log(chalk.white(`✓ Using ticket ID: ${transferTicketId}`));
+test('Transaction Status Check', async (t) => {
+  await t.test('should have ticket ID from transfer', async () => {
+    assert.ok(transferTicketId, 'Ticket ID should be captured from transfer test');
   });
 
-  await t.test('Check status with valid ticket ID', async () => {
+  await t.test('should check status with valid ticket ID', async () => {
     if (!transferTicketId) {
-      console.log(chalk.yellow('⚠️  Skipping - no ticket ID from transfer'));
+      console.log('Skipping - no ticket ID from transfer');
       return;
     }
 
-    console.log(chalk.yellow(`\n🔍 Checking status for: ${transferTicketId}...`));
-
     const result = await executeCLI(`${STATUS_COMMAND} ${transferTicketId}`);
     const output = result.stdout || result.stderr;
-
-    console.log(chalk.yellow('\n📊 Status Output:\n'));
-    console.log(output);
+    statusOutput = output; // Store for summary
 
     assert.ok(output.length > 0, 'CLI should produce output');
-    assert.ok(
-      output.includes(transferTicketId),
-      'Output should contain ticket ID'
-    );
-    
-    console.log(chalk.green('✅ Status check successful'));
+    assert.ok(output.includes(transferTicketId), 'Output should contain ticket ID');
   });
 
-  await t.test('Verify status contains required fields', async () => {
+  await t.test('should contain required status fields', async () => {
     if (!transferTicketId) {
-      console.log(chalk.yellow('⚠️  Skipping - no ticket ID from transfer'));
+      console.log('Skipping - no ticket ID from transfer');
       return;
     }
 
@@ -264,14 +219,10 @@ test('🔧 Transaction Status - Check Transfer Status', async (t) => {
     const validStatuses = ['BROADCASTING', 'SUCCESS', 'MINED', 'FAILED'];
     const hasStatus = validStatuses.some(status => output.includes(status));
     assert.ok(hasStatus, 'Output should contain transaction status');
-    console.log(chalk.white('✓ Transaction status found'));
 
     // Check for timestamps
     assert.ok(output.includes('Created'), 'Should contain creation timestamp');
-    console.log(chalk.white('✓ Created timestamp found'));
-
     assert.ok(output.includes('Updated'), 'Should contain updated timestamp');
-    console.log(chalk.white('✓ Updated timestamp found'));
 
     // Check for TX ID if completed
     if (output.includes('SUCCESS') || output.includes('MINED')) {
@@ -279,28 +230,21 @@ test('🔧 Transaction Status - Check Transfer Status', async (t) => {
         output.includes('TX ID') || output.includes('whatsonchain.com'),
         'Completed transaction should show TX ID'
       );
-      console.log(chalk.white('✓ TX ID found (transaction completed)'));
-    } else {
-      console.log(chalk.yellow('⚠️  Transaction still processing'));
     }
   });
 });
 
-test('🔧 Transfer Command - Error Handling', async (t) => {
-  console.log(chalk.cyan('\n=== Testing error handling ==='));
-  
-  await t.test('Insufficient balance', async () => {
+test('Transfer Error Handling', async (t) => {
+  await t.test('should handle insufficient balance', async () => {
     const result: any = await executeCLIWithInput(
       `${TRANSFER_COMMAND} 999999 ${TEST_RECIPIENT}`,
       [WALLET_PASSWORD]
     );
     const output = result.stdout || result.stderr;
-    
-    // Should fail due to insufficient balance
-    console.log(chalk.white('✓ Insufficient balance handling verified'));
+    assert.ok(output.length > 0, 'Should produce error output');
   });
 
-  await t.test('Missing ticket ID in status command', async () => {
+  await t.test('should error when ticket ID is missing', async () => {
     const result = await executeCLI(STATUS_COMMAND);
     const output = result.stdout || result.stderr;
     
@@ -308,34 +252,40 @@ test('🔧 Transfer Command - Error Handling', async (t) => {
       !result.success || output.includes('error') || output.includes('required'),
       'Should show error when ticket ID is missing'
     );
-    console.log(chalk.white('✓ Missing ticket ID error handled'));
   });
 
-  await t.test('Invalid ticket ID format', async () => {
+  await t.test('should handle invalid ticket ID format', async () => {
     const result = await executeCLI(`${STATUS_COMMAND} invalid-ticket-123`);
     const output = result.stdout || result.stderr;
     
     assert.ok(output.length > 0, 'Should produce error output');
-    console.log(chalk.white('✓ Invalid ticket ID handled'));
   });
 });
 
-test('🧾 Test Summary', async () => {
-  console.log(chalk.cyan('\n=== Integration Test Summary ==='));
+test('Test Summary', async () => {
+  console.log('\n--- Transfer & Status Test Summary ---');
   
   if (transferTicketId) {
-    console.log(chalk.green('\n✅ ALL TESTS PASSED'));
-    console.log(chalk.white(`\n📦 Transfer & Status Details:`));
-    console.log(chalk.gray(`   Ticket ID: ${transferTicketId}`));
-    console.log(chalk.gray(`   Amount: ${TEST_AMOUNT} MNEE`));
-    console.log(chalk.gray(`   Recipient: ${TEST_RECIPIENT}`));
-    console.log(chalk.cyan(`\n🔗 Full Flow Tested:`));
-    console.log(chalk.white('   ✓ Transfer executed'));
-    console.log(chalk.white('   ✓ Ticket ID captured'));
-    console.log(chalk.white('   ✓ Status checked'));
+    console.log('Status: PASSED');
+    console.log(`Ticket ID: ${transferTicketId}`);
+    console.log(`Amount: ${TEST_AMOUNT} MNEE`);
+    console.log(`Recipient: ${TEST_RECIPIENT}`);
   } else {
-    console.log(chalk.red('\n❌ Transfer Failed'));
-    console.log(chalk.yellow('   Update WALLET_PASSWORD in .env'));
-    console.log(chalk.yellow('   Ensure wallet has sufficient balance'));
+    console.log('Status: FAILED');
+    console.log('Note: Check WALLET_PASSWORD in .env and wallet balance');
+  }
+  
+  console.log('--------------------------------------');
+  
+  if (transferOutput) {
+    console.log('\n--- Transfer Output ---');
+    console.log(transferOutput);
+    console.log('-----------------------');
+  }
+  
+  if (statusOutput) {
+    console.log('\n--- Status Output ---');
+    console.log(statusOutput);
+    console.log('---------------------\n');
   }
 });

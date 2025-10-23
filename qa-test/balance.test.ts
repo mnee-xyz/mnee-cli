@@ -2,24 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import chalk from 'chalk';
-import {
-  getActiveWallet,
-  getAllWallets,
-} from '../dist/utils/keytar.js';
+import { getActiveWallet, getAllWallets } from '../dist/utils/keytar.js';
 
 const execAsync = promisify(exec);
 const CLI_COMMAND = 'mnee balance';
 
+// Store actual output for summary
+let actualOutput = '';
+
 async function executeCLI(command: string) {
   try {
     const { stdout, stderr } = await execAsync(command, { timeout: 10000 });
-    return {
-      stdout: stdout.trim(),
-      stderr: stderr.trim(),
-      exitCode: 0,
-      success: true,
-    };
+    return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: 0, success: true };
   } catch (error: any) {
     return {
       stdout: (error.stdout || '').trim(),
@@ -31,89 +25,71 @@ async function executeCLI(command: string) {
   }
 }
 
-
-test('🔧 Balance Command - Prerequisites', async (t) => {
-  console.log(chalk.cyan('\n=== Checking CLI prerequisites ==='));
-
-  await t.test('Wallet existence', async () => {
+test('Balance Prerequisites', async (t) => {
+  await t.test('should have at least one wallet', async () => {
     const wallets = await getAllWallets();
-    assert.ok(wallets.length > 0, 'At least one wallet should exist.');
-    console.log(chalk.green(`✅ Found ${wallets.length} wallet(s) in keytar`));
+    assert.ok(wallets.length > 0, 'At least one wallet should exist');
   });
 
-  await t.test('Active wallet set', async () => {
+  await t.test('should have active wallet set', async () => {
     const activeWallet = await getActiveWallet();
-    assert.ok(activeWallet, 'An active wallet must be set.');
-    console.log(chalk.green(`✅ Active wallet: ${activeWallet.name} (${activeWallet.environment})`));
-    console.log(chalk.gray(`   Address: ${activeWallet.address}`));
+    assert.ok(activeWallet, 'An active wallet must be set');
   });
 
-  await t.test('Active wallet environment', async () => {
+  await t.test('should have active wallet in sandbox environment', async () => {
     const activeWallet = await getActiveWallet();
-    assert.strictEqual(
-      activeWallet?.environment,
-      'sandbox',
-      'Active wallet should be in sandbox environment for testing'
-    );
-    console.log(chalk.green('✅ Active wallet is in sandbox environment'));
+    assert.strictEqual(activeWallet?.environment, 'sandbox', 'Wallet should be in sandbox');
   });
 });
 
-
-test('🔧 Balance Command - CLI Execution', async (t) => {
-  console.log(chalk.cyan('\n=== Running balance CLI command ==='));
-
+test('Balance Command Execution', async (t) => {
   let activeWallet: any;
 
   await t.before(async () => {
     activeWallet = await getActiveWallet();
-    if (!activeWallet) throw new Error('No active wallet found.');
+    if (!activeWallet) throw new Error('No active wallet found');
   });
 
-  await t.test('Run CLI and capture output', async () => {
+  await t.test('should produce output', async () => {
     const result = await executeCLI(CLI_COMMAND);
     const output = result.stdout || result.stderr;
-
-    console.log(chalk.yellow('\n📊 CLI Output:\n'));
-    console.log(output);
-    console.log(chalk.gray(`\nExit Code: ${result.exitCode}`));
-
+    actualOutput = output; // Store for summary
     assert.ok(output.length > 0, 'CLI should produce some output');
   });
 
-  await t.test('Wallet name appears', async () => {
+  await t.test('should display wallet name', async () => {
     const { stdout, stderr } = await executeCLI(CLI_COMMAND);
     const output = stdout || stderr;
-    assert.ok(
-      output.includes(activeWallet.name),
-      `Output should contain wallet name: ${activeWallet.name}`
-    );
-    console.log(chalk.green('✅ Wallet name verified in output'));
+    assert.ok(output.includes(activeWallet.name), `Output should contain wallet name: ${activeWallet.name}`);
   });
 
-  await t.test('Wallet address appears', async () => {
+  await t.test('should display wallet address', async () => {
     const { stdout, stderr } = await executeCLI(CLI_COMMAND);
     const output = stdout || stderr;
     assert.ok(
-      output.includes(activeWallet.address.slice(0, 6)) ||
-      output.includes(activeWallet.address),
+      output.includes(activeWallet.address.slice(0, 6)) || output.includes(activeWallet.address),
       'Output should contain wallet address'
     );
-    console.log(chalk.green('✅ Wallet address verified in output'));
   });
 
-  await t.test('Balance amount shown', async () => {
+  await t.test('should display balance amount', async () => {
     const { stdout, stderr } = await executeCLI(CLI_COMMAND);
     const output = stdout || stderr;
     assert.ok(/\d+(\.\d+)?/.test(output), 'Output should display balance amount');
-    console.log(chalk.green('✅ Balance amount detected in CLI output'));
   });
 });
 
-
-test('🧾 Test Summary', async () => {
-  console.log(chalk.cyan('\n=== ✅ All balance command tests completed! ==='));
-  console.log(chalk.green('\n📝 Summary:'));
-  console.log(chalk.white('   ✓ Uses real keytar wallets'));
-  console.log(chalk.white('   ✓ Verifies CLI balance command'));
+test('Test Summary', async () => {
+  const activeWallet = await getActiveWallet();
+  
+  console.log('\n--- Balance Command Test Summary ---');
+  console.log('Status: PASSED');
+  console.log(`Wallet: ${activeWallet?.name}`);
+  console.log(`Address: ${activeWallet?.address}`);
+  console.log(`Environment: ${activeWallet?.environment}`);
+  console.log('------------------------------------');
+  
+  console.log('\n--- Actual CLI Output ---');
+  console.log(actualOutput);
+  console.log('-------------------------\n');
 });

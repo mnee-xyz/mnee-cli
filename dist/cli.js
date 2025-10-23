@@ -7,7 +7,6 @@ import { decryptPrivateKey, encryptPrivateKey } from './utils/crypto.js';
 import { getActiveWallet, getAllWallets, saveWallets, setActiveWallet, getWalletByAddress, setPrivateKey, deletePrivateKey, getPrivateKey, clearActiveWallet, getLegacyWallet, deleteLegacyWallet, } from './utils/keytar.js';
 import { getVersion } from './utils/helper.js';
 import { colors, icons, createSpinner, showBox, formatAddress, formatAmount, formatLink, showWelcome, animateSuccess, startTransactionAnimation, startAirdropAnimation, } from './utils/ui.js';
-import { HistoryFetcher } from './utils/cache/cached-history.js';
 import Mnee from '@mnee/ts-sdk';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 const apiUrl = 'https://api-developer.mnee.net'; // Use https://api-stg-developer.mnee.net if testing in mnee stage env (need VPN to access)
@@ -243,129 +242,147 @@ program
 });
 program
     .command('history')
-    .description('Get transaction history with filtering options & caching')
+    .description('Get transaction history with filtering options')
     .option('-u, --unconfirmed', 'Show only unconfirmed transactions')
     .option('-c, --confirmed', 'Show only confirmed transactions')
     .option('-l, --limit <number>', 'Show only the N most recent transactions (e.g., -l 10)', parseInt)
-    .option('-r, --refresh', 'Force refresh cache (ignore cached data)')
     .option('-t, --type <type>', 'Filter by type: "send" or "receive"')
     .option('--txid <txid>', 'Search by transaction ID (partial match)')
     .option('--address <address>', 'Filter by counterparty address (partial match)')
     .option('--min <amount>', 'Show transactions >= amount (e.g., --min 0.5)', parseFloat)
     .option('--max <amount>', 'Show transactions <= amount (e.g., --max 100)', parseFloat)
-    .option('--cache-info', 'Show cache information')
-    .option('--clear-cache', 'Clear transaction cache')
     .action(async (options) => {
     const activeWallet = await getActiveWallet();
     if (!activeWallet) {
         console.error(`${icons.error} ${colors.error('No active wallet found.')} Run ${colors.primary('mnee create')} first or ${colors.primary('mnee use <wallet-name>')} to select a wallet.`);
         return;
     }
-    const historyfetcher = new HistoryFetcher();
-    if (options.clearCache) {
-        await historyfetcher.clearCache(activeWallet.address, activeWallet.environment);
-        console.log(`${icons.success} ${colors.success('Cache cleared for')} ${colors.primary(activeWallet.name)}`);
-        return;
-    }
-    if (options.cacheInfo) {
-        const info = await historyfetcher.getCacheInfo(activeWallet.address, activeWallet.environment);
-        if (info.exists) {
-            console.log(`${icons.info} Cache: ${info.transactionCount} transactions, ${info.ageText} old`);
-        }
-        else {
-            console.log(`${icons.info} No cache found`);
-        }
-        return;
-    }
-    const spinner = createSpinner(options.refresh
-        ? `Refreshing history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})... `
-        : `Fetching history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})...`);
+    const spinner = createSpinner(`Fetching history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})...`);
     spinner.start();
     try {
         const mneeInstance = getMneeInstance(activeWallet.environment);
+        let nextScore = undefined;
+        let hasMore = true;
         let history = [];
-        const needsFiltering = options.txid || options.type || options.address ||
-            options.confirmed || options.unconfirmed ||
-            options.min !== undefined || options.max !== undefined;
-        if (needsFiltering) {
-            history = await historyfetcher.filterHistory(activeWallet, mneeInstance, {
-                txid: options.txid,
-                type: options.type,
-                address: options.address,
-                confirmed: options.confirmed,
-                unconfirmed: options.unconfirmed,
-                min: options.min,
-                max: options.max,
-                limit: options.limit,
-                refresh: options.refresh
+        let attempts = 0;
+        const maxAttempts = 20; // Safety limit to prevent infinite loops
+        while (hasMore && attempts < maxAttempts) {
+            const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(activeWallet.address, nextScore, 100, 'desc');
+            if (newNextScore === nextScore && newNextScore !== undefined)
+                break;
+            history.push(...newHistory);
+            nextScore = newNextScore;
+            hasMore = nextScore !== 0 && nextScore !== undefined;
+            attempts++;
+        }
+        if (attempts >= maxAttempts) {
+            console.log('Reached maximum number of attempts. Some history may be missing.');
+        }
+        // Deduplicate transactions by txid (keep the one with the highest score)
+        const txMap = new Map();
+        history.forEach((tx) => {
+            const existing = txMap.get(tx.txid);
+            if (!existing || tx.score > existing.score) {
+                txMap.set(tx.txid, tx);
+            }
+        });
+        history = Array.from(txMap.values());
+        // Apply filters based on options
+        if (options.unconfirmed) {
+            history = history.filter((tx) => tx.status === 'unconfirmed');
+        }
+        else if (options.confirmed) {
+            history = history.filter((tx) => tx.status === 'confirmed');
+        }
+        // Filter by transaction type
+        if (options.type) {
+            const type = options.type.toLowerCase();
+            if (type === 'send' || type === 'receive') {
+                history = history.filter((tx) => tx.type === type);
+            }
+        }
+        // Filter by transaction ID (partial match)
+        if (options.txid) {
+            history = history.filter((tx) => tx.txid.toLowerCase().includes(options.txid.toLowerCase()));
+        }
+        // Filter by counterparty address
+        if (options.address) {
+            history = history.filter((tx) => tx.counterparties?.some((cp) => cp.address.toLowerCase().includes(options.address.toLowerCase())));
+        }
+        // Filter by amount range
+        if (options.min !== undefined || options.max !== undefined) {
+            history = history.filter((tx) => {
+                const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
+                if (options.min !== undefined && amount < options.min)
+                    return false;
+                if (options.max !== undefined && amount > options.max)
+                    return false;
+                return true;
             });
         }
-        else {
-            history = await historyfetcher.getHistory(activeWallet, mneeInstance, {
-                limit: options.limit,
-                refresh: options.refresh
-            });
+        // Apply limit if specified
+        if (options.limit && options.limit > 0) {
+            history = history.slice(0, options.limit);
         }
         spinner.stop();
         // Display formatted history
         if (history.length === 0) {
             showBox(`${icons.info} No transactions found`, 'Transaction History', 'info');
-            return;
         }
-        // Sort transactions by score (newest first)
-        history.sort((a, b) => (b.score || 0) - (a.score || 0));
-        console.log('');
-        console.log(colors.highlight(`${icons.time} Transaction History`));
-        console.log(colors.muted('─'.repeat(60)));
-        console.log('');
-        // Display transactions
-        history.forEach((tx, index) => {
-            // Transaction type and styling
-            const type = tx.type || 'unknown';
-            const icon = type === 'send' ? icons.send : type === 'receive' ? icons.receive : icons.dot;
-            const color = type === 'send' ? colors.error : type === 'receive' ? colors.success : colors.muted;
-            // Convert amount and fee from atomic units
-            const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
-            const fee = mneeInstance.fromAtomicAmount(tx.fee || 0);
-            // Status indicator
-            const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
-            const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('unconfirmed');
-            // Block height
-            const heightDisplay = tx.height ? `block ${tx.height}` : '';
-            // Format the main transaction line
-            console.log(`  ${icon} ${color(type.toUpperCase().padEnd(8))} ${formatAmount(amount).padEnd(22)} ${statusIcon} ${statusText}`);
-            // Show fee if it exists
-            if (fee > 0) {
-                console.log(`     ${colors.muted('fee:')} ${formatAmount(fee)}`);
-            }
-            // Show all counterparties
-            if (tx.counterparties && tx.counterparties.length > 0) {
-                tx.counterparties.forEach((cp) => {
-                    const cpAmount = mneeInstance.fromAtomicAmount(cp.amount || 0);
-                    console.log(`     ${colors.muted(type === 'send' ? 'to:' : 'from:')} ${colors.muted(cp.address)} ${formatAmount(cpAmount)}`);
-                });
-            }
-            // Show block height
-            if (heightDisplay) {
-                console.log(`     ${colors.muted(heightDisplay)}`);
-            }
-            // Show transaction ID
-            console.log(`     ${colors.muted(`tx: ${tx.txid}`)}`);
-            // Add separator between transactions (except for the last one)
-            if (index < history.length - 1) {
-                console.log(colors.muted('     ' + '·'.repeat(50)));
-            }
+        else {
+            // Sort transactions by score (newest first)
+            history.sort((a, b) => (b.score || 0) - (a.score || 0));
             console.log('');
-        });
-        console.log(colors.muted('─'.repeat(60)));
-        console.log(colors.muted(`  Total: ${history.length} transaction${history.length !== 1 ? 's' : ''}`));
-        console.log('');
-        process.exit(0);
+            console.log(colors.highlight(`${icons.time} Transaction History`));
+            console.log(colors.muted('─'.repeat(60)));
+            console.log('');
+            // Display transactions
+            history.forEach((tx, index) => {
+                // Transaction type and styling
+                const type = tx.type || 'unknown';
+                const icon = type === 'send' ? icons.send : type === 'receive' ? icons.receive : icons.dot;
+                const color = type === 'send' ? colors.error : type === 'receive' ? colors.success : colors.muted;
+                // Convert amount and fee from atomic units
+                const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
+                const fee = mneeInstance.fromAtomicAmount(tx.fee || 0);
+                // Status indicator
+                const statusIcon = tx.status === 'confirmed' ? colors.success('✓') : colors.warning('⏳');
+                const statusText = tx.status === 'confirmed' ? colors.muted('confirmed') : colors.warning('unconfirmed');
+                // Block height
+                const heightDisplay = tx.height ? `block ${tx.height}` : '';
+                // Format the main transaction line
+                console.log(`  ${icon} ${color(type.toUpperCase().padEnd(8))} ${formatAmount(amount).padEnd(22)} ${statusIcon} ${statusText}`);
+                // Show fee if it exists
+                if (fee > 0) {
+                    console.log(`     ${colors.muted('fee:')} ${formatAmount(fee)}`);
+                }
+                // Show all counterparties
+                if (tx.counterparties && tx.counterparties.length > 0) {
+                    tx.counterparties.forEach((cp) => {
+                        const cpAmount = mneeInstance.fromAtomicAmount(cp.amount || 0);
+                        console.log(`     ${colors.muted(type === 'send' ? 'to:' : 'from:')} ${colors.muted(cp.address)} ${formatAmount(cpAmount)}`);
+                    });
+                }
+                // Show block height
+                if (heightDisplay) {
+                    console.log(`     ${colors.muted(heightDisplay)}`);
+                }
+                // Show transaction ID
+                console.log(`     ${colors.muted(`tx: ${tx.txid}`)}`);
+                // Add separator between transactions (except for the last one)
+                if (index < history.length - 1) {
+                    console.log(colors.muted('     ' + '·'.repeat(50)));
+                }
+                console.log('');
+            });
+            console.log(colors.muted('─'.repeat(60)));
+            console.log(colors.muted(`  Total: ${history.length} transaction${history.length !== 1 ? 's' : ''}`));
+            console.log('');
+        }
     }
     catch (error) {
         spinner.fail(colors.error('Error fetching history'));
         console.error(error);
-        process.exit(1);
     }
 });
 program

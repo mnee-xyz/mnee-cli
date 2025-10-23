@@ -34,7 +34,6 @@ import {
   startTransactionAnimation,
   startAirdropAnimation,
 } from './utils/ui.js';
-import { HistoryFetcher } from './utils/cache/cached-history.js';
 import Mnee, { SendMNEE, TxHistory, TransferStatus } from '@mnee/ts-sdk';
 import { loadConfig, saveConfig, clearConfig, startAuthFlow, getProfile, logout as logoutApi } from './utils/auth.js';
 
@@ -340,18 +339,15 @@ program
 
 program
   .command('history')
-  .description('Get transaction history with filtering options & caching')
+  .description('Get transaction history with filtering options')
   .option('-u, --unconfirmed', 'Show only unconfirmed transactions')
   .option('-c, --confirmed', 'Show only confirmed transactions')
   .option('-l, --limit <number>', 'Show only the N most recent transactions (e.g., -l 10)', parseInt)
-  .option('-r, --refresh', 'Force refresh cache (ignore cached data)')
   .option('-t, --type <type>', 'Filter by type: "send" or "receive"')
   .option('--txid <txid>', 'Search by transaction ID (partial match)')
   .option('--address <address>', 'Filter by counterparty address (partial match)')
   .option('--min <amount>', 'Show transactions >= amount (e.g., --min 0.5)', parseFloat)
   .option('--max <amount>', 'Show transactions <= amount (e.g., --max 100)', parseFloat)
-  .option('--cache-info', 'Show cache information')
-  .option('--clear-cache', 'Clear transaction cache')
   .action(async (options) => {
     const activeWallet = await getActiveWallet();
 
@@ -364,63 +360,97 @@ program
       return;
     }
 
-    const historyfetcher = new HistoryFetcher();
-    if(options.clearCache) {
-      await historyfetcher.clearCache(activeWallet.address, activeWallet.environment);
-      console.log(`${icons.success} ${colors.success('Cache cleared for')} ${colors.primary(activeWallet.name)}`);
-      return;
-    }
-
-    if(options.cacheInfo) {
-      const info = await historyfetcher.getCacheInfo(activeWallet.address, activeWallet.environment);
-      if(info.exists) {
-        console.log(`${icons.info} Cache: ${info.transactionCount} transactions, ${info.ageText} old`);
-      } else {
-        console.log(`${icons.info} No cache found`);
-      }
-      return;
-    }
-
     const spinner = createSpinner(
-      options.refresh
-        ? `Refreshing history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})... `
-        : `Fetching history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})...`
+      `Fetching history for ${colors.primary(activeWallet.name)} (${activeWallet.environment})...`,
     );
     spinner.start();
 
     try {
       const mneeInstance = getMneeInstance(activeWallet.environment);
+      let nextScore = undefined;
+      let hasMore = true;
       let history: TxHistory[] = [];
-      const needsFiltering = options.txid || options.type || options.address ||
-                            options.confirmed || options.unconfirmed ||
-                            options.min !== undefined || options.max !== undefined;
-      
-      if(needsFiltering) {
-        history = await historyfetcher.filterHistory(activeWallet, mneeInstance, {
-          txid: options.txid,
-          type: options.type,
-          address: options.address,
-          confirmed: options.confirmed,
-          unconfirmed: options.unconfirmed,
-          min: options.min,
-          max: options.max,
-          limit: options.limit,
-          refresh:options.refresh
-        });
-      } else {
-        history = await historyfetcher.getHistory(activeWallet, mneeInstance, {
-          limit: options.limit,
-          refresh: options.refresh
+      let attempts = 0;
+      const maxAttempts = 20; // Safety limit to prevent infinite loops
+
+      while (hasMore && attempts < maxAttempts) {
+        const { history: newHistory, nextScore: newNextScore } = await mneeInstance.recentTxHistory(
+          activeWallet.address,
+          nextScore,
+          100,
+          'desc',
+        );
+
+        if (newNextScore === nextScore && newNextScore !== undefined) break;
+
+        history.push(...newHistory);
+        nextScore = newNextScore;
+        hasMore = nextScore !== 0 && nextScore !== undefined;
+        attempts++;
+      }
+
+      if (attempts >= maxAttempts) {
+        console.log('Reached maximum number of attempts. Some history may be missing.');
+      }
+
+      // Deduplicate transactions by txid (keep the one with the highest score)
+      const txMap = new Map<string, TxHistory>();
+      history.forEach((tx) => {
+        const existing = txMap.get(tx.txid);
+        if (!existing || tx.score > existing.score) {
+          txMap.set(tx.txid, tx);
+        }
+      });
+      history = Array.from(txMap.values());
+
+      // Apply filters based on options
+      if (options.unconfirmed) {
+        history = history.filter((tx) => tx.status === 'unconfirmed');
+      } else if (options.confirmed) {
+        history = history.filter((tx) => tx.status === 'confirmed');
+      }
+
+      // Filter by transaction type
+      if (options.type) {
+        const type = options.type.toLowerCase();
+        if (type === 'send' || type === 'receive') {
+          history = history.filter((tx) => tx.type === type);
+        }
+      }
+
+      // Filter by transaction ID (partial match)
+      if (options.txid) {
+        history = history.filter((tx) => tx.txid.toLowerCase().includes(options.txid.toLowerCase()));
+      }
+
+      // Filter by counterparty address
+      if (options.address) {
+        history = history.filter((tx) =>
+          tx.counterparties?.some((cp) => cp.address.toLowerCase().includes(options.address.toLowerCase())),
+        );
+      }
+
+      // Filter by amount range
+      if (options.min !== undefined || options.max !== undefined) {
+        history = history.filter((tx) => {
+          const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
+          if (options.min !== undefined && amount < options.min) return false;
+          if (options.max !== undefined && amount > options.max) return false;
+          return true;
         });
       }
-  
+
+      // Apply limit if specified
+      if (options.limit && options.limit > 0) {
+        history = history.slice(0, options.limit);
+      }
+
       spinner.stop();
 
       // Display formatted history
       if (history.length === 0) {
         showBox(`${icons.info} No transactions found`, 'Transaction History', 'info');
-        return
-      } 
+      } else {
         // Sort transactions by score (newest first)
         history.sort((a, b) => (b.score || 0) - (a.score || 0));
 
@@ -489,11 +519,10 @@ program
         console.log(colors.muted('─'.repeat(60)));
         console.log(colors.muted(`  Total: ${history.length} transaction${history.length !== 1 ? 's' : ''}`));
         console.log('');
-        process.exit(0);
+      }
     } catch (error) {
       spinner.fail(colors.error('Error fetching history'));
       console.error(error);
-      process.exit(1);
     }
   });
 
