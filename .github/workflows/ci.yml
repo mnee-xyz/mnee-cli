@@ -69,6 +69,7 @@ jobs:
           WALLET_PASSWORD: ${{ secrets.WALLET_PASSWORD }}
           DBUS_SESSION_BUS_ADDRESS: ${{ env.DBUS_SESSION_BUS_ADDRESS }}
           GNOME_KEYRING_CONTROL: ${{ env.GNOME_KEYRING_CONTROL }}
+          CLI_PATH: "node dist/cli.js"
       
       - name: Test Summary
         if: always()
@@ -77,6 +78,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Environment: CI (GitHub Actions)" >> $GITHUB_STEP_SUMMARY
           echo "Node Version: 20.x" >> $GITHUB_STEP_SUMMARY
+          echo "CLI Path: node dist/cli.js" >> $GITHUB_STEP_SUMMARY
           echo "Wallet: Single test wallet imported" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" == "success" ]; then
@@ -99,6 +101,7 @@ jobs:
             | Build | ✅ Passed |
             | Wallet Setup | ✅ Verified |
             | QA Tests | ✅ Passed |
+            CLI Path: \`node dist/cli.js\`
             
             Ready for review! 🚀`;
             
@@ -119,8 +122,10 @@ jobs:
             | Check | Status |
             |-------|--------|
             | Build | ${{ steps.build.outcome == 'success' && '✅' || '❌'  }} |
-            | Wallet Setup | ${{ steps.verify.outcome == 'success' && '✅' || '❌' }} |
+            | Wallet Setup | ${{ steps.verify.outcome == 'success' && '✅' || '❌'  }} |
             | QA Tests | ❌ Failed |
+            
+            CLI Path: \`node dist/cli.js\`
             
             Please check the [Actions tab](${context.payload.repository.html_url}/actions/runs/${context.runId}) for details.`;
             

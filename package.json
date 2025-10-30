@@ -13,7 +13,7 @@
     "postbuild": "chmod +x dist/cli.js",
     "start": "node dist/cli.js",
     "test": "tsx qa-test/test-all.ts",
-    "test:no-build": "tsx qa-test/test-all.ts",
+    "test:no-build": "CLI_PATH='node dist/cli.js' tsx qa-test/test-all.ts",
     "test:ci": "npm run build && npm run test:no-build",
     "prepublishOnly": "npm run build"
   },

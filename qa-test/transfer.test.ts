@@ -4,10 +4,18 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getActiveWallet, getAllWallets } from '../dist/utils/keytar.js';
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const execAsync = promisify(exec);
-const TRANSFER_COMMAND = 'mnee transfer';
-const STATUS_COMMAND = 'mnee status';
+
+// Use CLI_PATH environment variable or default to built CLI
+const CLI_PATH ='node dist/cli.js';
+const TRANSFER_COMMAND = `${CLI_PATH} transfer`;
+const STATUS_COMMAND = `${CLI_PATH} status`;
 
 // Test constants
 const TEST_RECIPIENT = '1Gqwa5uPapTJqGEPZU6P7YZNGmWoZ6w9vk';
@@ -19,50 +27,120 @@ let transferTicketId: string | null = null;
 let transferOutput = '';
 let statusOutput = '';
 
-async function executeCLI(command: string) {
-  try {
-    const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
-    return {
-      stdout: stdout.trim(),
-      stderr: stderr.trim(),
-      exitCode: 0,
-      success: true,
-    };
-  } catch (error: any) {
-    return {
-      stdout: (error.stdout || '').trim(),
-      stderr: (error.stderr || '').trim(),
-      exitCode: error.code ?? 1,
-      success: false,
-      error: error.message,
-    };
-  }
-}
+// Helper function to add delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function executeCLIWithInput(command: string, inputs: string[]) {
-  return new Promise((resolve) => {
-    const child = exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
-      resolve({
+async function executeCLI(command: string, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const { stdout, stderr } = await execAsync(command, { 
+        timeout: 30000,
+        cwd: path.resolve(__dirname, '..')
+      });
+      
+      // Add delay after successful execution
+      if (attempt > 1) {
+        await delay(1000);
+      }
+      
+      return {
         stdout: stdout.trim(),
         stderr: stderr.trim(),
-        exitCode: error ? error.code ?? 1 : 0,
-        success: !error,
-        error: error?.message,
-      });
-    });
+        exitCode: 0,
+        success: true,
+      };
+    } catch (error: any) {
+      // If not the last attempt, wait before retrying
+      if (attempt < retries) {
+        console.log(`  ⚠ Attempt ${attempt}/${retries} failed, retrying in 2s...`);
+        await delay(2000);
+        continue;
+      }
+      
+      return {
+        stdout: (error.stdout || '').trim(),
+        stderr: (error.stderr || '').trim(),
+        exitCode: error.code ?? 1,
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+  
+  // Fallback return
+  return {
+    stdout: '',
+    stderr: 'Max retries exceeded',
+    exitCode: 1,
+    success: false,
+    error: 'Max retries exceeded',
+  };
+}
 
-    inputs.forEach((input, index) => {
-      setTimeout(() => {
-        child.stdin?.write(input + '\n');
-        if (index === inputs.length - 1) {
-          child.stdin?.end();
-        }
-      }, index * 500);
-    });
-  });
+async function executeCLIWithInput(command: string, inputs: string[], retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const result = await new Promise((resolve) => {
+        const child = exec(command, { 
+          timeout: 30000,
+          cwd: path.resolve(__dirname, '..')
+        }, (error, stdout, stderr) => {
+          resolve({
+            stdout: stdout.trim(),
+            stderr: stderr.trim(),
+            exitCode: error ? error.code ?? 1 : 0,
+            success: !error,
+            error: error?.message,
+          });
+        });
+
+        inputs.forEach((input, index) => {
+          setTimeout(() => {
+            child.stdin?.write(input + '\n');
+            if (index === inputs.length - 1) {
+              child.stdin?.end();
+            }
+          }, index * 500);
+        });
+      });
+      
+      // Add delay after successful execution
+      if (attempt > 1) {
+        await delay(1000);
+      }
+      
+      return result;
+    } catch (error: any) {
+      // If not the last attempt, wait before retrying
+      if (attempt < retries) {
+        console.log(`  ⚠ Attempt ${attempt}/${retries} failed, retrying in 2s...`);
+        await delay(2000);
+        continue;
+      }
+      
+      return {
+        stdout: '',
+        stderr: error.message || 'Unknown error',
+        exitCode: 1,
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+  
+  // Fallback return
+  return {
+    stdout: '',
+    stderr: 'Max retries exceeded',
+    exitCode: 1,
+    success: false,
+    error: 'Max retries exceeded',
+  };
 }
 
 test('Transfer Prerequisites', async (t) => {
+  await delay(500);
+  
   await t.test('should have wallet and environment configured', async () => {
     const wallets = await getAllWallets();
     assert.ok(wallets.length > 0, 'At least one wallet should exist');
@@ -79,9 +157,13 @@ test('Transfer Prerequisites', async (t) => {
   await t.test('should have password environment variable', async () => {
     assert.ok(WALLET_PASSWORD, 'WALLET_PASSWORD must be set in environment');
   });
+  
+  await delay(500);
 });
 
 test('Transfer Input Validation', async (t) => {
+  await delay(1000);
+  
   await t.test('should reject zero amount', async () => {
     const result = await executeCLI(`${TRANSFER_COMMAND} 0 ${TEST_RECIPIENT}`);
     const output = result.stdout || result.stderr;
@@ -89,6 +171,7 @@ test('Transfer Input Validation', async (t) => {
       output.includes('Amount must be greater than 0') || !result.success,
       'Should reject zero amount'
     );
+    await delay(500);
   });
 
   await t.test('should reject negative amount', async () => {
@@ -98,6 +181,7 @@ test('Transfer Input Validation', async (t) => {
       output.includes('Amount must be greater than 0') || !result.success,
       'Should reject negative amount'
     );
+    await delay(500);
   });
 
   await t.test('should reject amount below minimum', async () => {
@@ -107,6 +191,7 @@ test('Transfer Input Validation', async (t) => {
       output.includes('Amount must be at least 0.00001') || !result.success,
       'Should reject amount below minimum'
     );
+    await delay(500);
   });
 
   await t.test('should reject non-numeric amount', async () => {
@@ -116,6 +201,7 @@ test('Transfer Input Validation', async (t) => {
       output.includes('Invalid amount') || !result.success,
       'Should reject non-numeric amount'
     );
+    await delay(500);
   });
 
   await t.test('should reject malformed address', async () => {
@@ -125,7 +211,10 @@ test('Transfer Input Validation', async (t) => {
       output.includes('Invalid') || !result.success,
       'Should reject malformed address'
     );
+    await delay(500);
   });
+  
+  await delay(1000);
 });
 
 test('Transfer Execution', async (t) => {
@@ -134,9 +223,12 @@ test('Transfer Execution', async (t) => {
   await t.before(async () => {
     activeWallet = await getActiveWallet();
     if (!activeWallet) throw new Error('No active wallet found');
+    await delay(1000);
   });
 
   await t.test('should execute transfer and capture ticket ID', async () => {
+    await delay(1500);
+    
     const result: any = await executeCLIWithInput(
       `${TRANSFER_COMMAND} ${TEST_AMOUNT} ${TEST_RECIPIENT}`,
       [WALLET_PASSWORD]
@@ -144,6 +236,12 @@ test('Transfer Execution', async (t) => {
 
     const output = result.stdout || result.stderr;
     transferOutput = output; // Store for summary
+
+    if (!result.success) {
+      console.log('Transfer command failed:', result.error);
+      console.log('stdout:', result.stdout);
+      console.log('stderr:', result.stderr);
+    }
 
     // Extract Ticket ID
     const ticketMatch = output.match(/Ticket:\s*([0-9a-fA-F-]{36})/);
@@ -155,13 +253,18 @@ test('Transfer Execution', async (t) => {
     // Verify success
     const isSuccess = /(Transfer\s+Success|Transaction\s+Details|TX ID:\s*[a-f0-9]+)/i.test(output);
 
+    assert.ok(result.success, 'Transfer command should execute successfully');
     assert.ok(isSuccess, 'Transfer should complete successfully');
     assert.ok(transferTicketId, 'Should receive ticket ID');
     assert.ok(!output.includes('Incorrect password'), 'Password should be correct');
+    
+    await delay(1000);
   });
 });
 
 test('Transaction Status Check', async (t) => {
+  await delay(1000);
+  
   await t.test('should have ticket ID from transfer', async () => {
     assert.ok(transferTicketId, 'Ticket ID should be captured from transfer test');
   });
@@ -172,12 +275,15 @@ test('Transaction Status Check', async (t) => {
       return;
     }
 
+    await delay(1000);
     const result = await executeCLI(`${STATUS_COMMAND} ${transferTicketId}`);
     const output = result.stdout || result.stderr;
     statusOutput = output; // Store for summary
 
     assert.ok(output.length > 0, 'CLI should produce output');
     assert.ok(output.includes(transferTicketId), 'Output should contain ticket ID');
+    
+    await delay(500);
   });
 
   await t.test('should contain required status fields', async () => {
@@ -186,6 +292,7 @@ test('Transaction Status Check', async (t) => {
       return;
     }
 
+    await delay(1000);
     const { stdout, stderr } = await executeCLI(`${STATUS_COMMAND} ${transferTicketId}`);
     const output = stdout || stderr;
 
@@ -205,10 +312,16 @@ test('Transaction Status Check', async (t) => {
         'Completed transaction should show TX ID'
       );
     }
+    
+    await delay(500);
   });
+  
+  await delay(1000);
 });
 
 test('Transfer Error Handling', async (t) => {
+  await delay(1000);
+  
   await t.test('should error when ticket ID is missing', async () => {
     const result = await executeCLI(STATUS_COMMAND);
     const output = result.stdout || result.stderr;
@@ -217,6 +330,8 @@ test('Transfer Error Handling', async (t) => {
       !result.success || output.includes('error') || output.includes('required'),
       'Should show error when ticket ID is missing'
     );
+    
+    await delay(500);
   });
 
   await t.test('should handle invalid ticket ID format', async () => {
@@ -224,7 +339,11 @@ test('Transfer Error Handling', async (t) => {
     const output = result.stdout || result.stderr;
     
     assert.ok(output.length > 0, 'Should produce error output');
+    
+    await delay(500);
   });
+  
+  await delay(500);
 });
 
 test('Test Summary', async () => {
