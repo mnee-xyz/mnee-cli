@@ -44,6 +44,7 @@ jobs:
         run: npm ci
       
       - name: Build project
+        id: build
         run: npm run build
       
       - name: Import test wallet to keytar
@@ -54,6 +55,7 @@ jobs:
           GNOME_KEYRING_CONTROL: ${{ env.GNOME_KEYRING_CONTROL }}
       
       - name: Verify wallet setup
+        id: verify
         run: node scripts/verify-ci-wallet.js
         env:
           DBUS_SESSION_BUS_ADDRESS: ${{ env.DBUS_SESSION_BUS_ADDRESS }}
@@ -64,6 +66,7 @@ jobs:
         env:
           CI: true
           NODE_ENV: test
+          WALLET_PASSWORD: ${{ secrets.WALLET_PASSWORD }}
           DBUS_SESSION_BUS_ADDRESS: ${{ env.DBUS_SESSION_BUS_ADDRESS }}
           GNOME_KEYRING_CONTROL: ${{ env.GNOME_KEYRING_CONTROL }}
       
@@ -115,8 +118,8 @@ jobs:
             
             | Check | Status |
             |-------|--------|
-            | Build | ${{ steps.build.outcome == 'success' && '✅ Passed' : '❌ Failed' }} |
-            | Wallet Setup | ${{ steps.verify.outcome == 'success' && '✅ Verified' : '❌ Failed' }} |
+            | Build | ${{ steps.build.outcome == 'success' && '✅' || '❌'  }} |
+            | Wallet Setup | ${{ steps.verify.outcome == 'success' && '✅' || '❌' }} |
             | QA Tests | ❌ Failed |
             
             Please check the [Actions tab](${context.payload.repository.html_url}/actions/runs/${context.runId}) for details.`;
