@@ -19,10 +19,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Install system dependencies
+      - name: Install system dependencies for keytar
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-1-dev
+          sudo apt-get install -y libsecret-1-dev gnome-keyring dbus-x11
+      
+      - name: Setup secret service for keytar
+        run: |
+          mkdir -p ~/.local/share/keyrings
+          eval $(dbus-launch --sh-syntax)
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
+          echo -n "test" | gnome-keyring-daemon --unlock
+          eval $(gnome-keyring-daemon --start --components=secrets)
+          echo "GNOME_KEYRING_CONTROL=$GNOME_KEYRING_CONTROL" >> $GITHUB_ENV
+          echo "GNOME_KEYRING_PID=$GNOME_KEYRING_PID" >> $GITHUB_ENV
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,12 +46,26 @@ jobs:
       - name: Build project
         run: npm run build
       
+      - name: Import test wallet to keytar
+        run: node scripts/import-ci-wallet.js
+        env:
+          TEST_WALLET_DATA: ${{ secrets.TEST_WALLET_DATA }}
+          DBUS_SESSION_BUS_ADDRESS: ${{ env.DBUS_SESSION_BUS_ADDRESS }}
+          GNOME_KEYRING_CONTROL: ${{ env.GNOME_KEYRING_CONTROL }}
+      
+      - name: Verify wallet setup
+        run: node scripts/verify-ci-wallet.js
+        env:
+          DBUS_SESSION_BUS_ADDRESS: ${{ env.DBUS_SESSION_BUS_ADDRESS }}
+          GNOME_KEYRING_CONTROL: ${{ env.GNOME_KEYRING_CONTROL }}
+      
       - name: Run tests
         run: npm run test:no-build
         env:
           CI: true
           NODE_ENV: test
-          WALLET_PASSWORD: ${{ secrets.WALLET_PASSWORD }}
+          DBUS_SESSION_BUS_ADDRESS: ${{ env.DBUS_SESSION_BUS_ADDRESS }}
+          GNOME_KEYRING_CONTROL: ${{ env.GNOME_KEYRING_CONTROL }}
       
       - name: Test Summary
         if: always()
@@ -50,18 +74,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Environment: CI (GitHub Actions)" >> $GITHUB_STEP_SUMMARY
           echo "Node Version: 20.x" >> $GITHUB_STEP_SUMMARY
+          echo "Wallet: Single test wallet imported" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" == "success" ]; then
-            echo "All tests passed successfully." >> $GITHUB_STEP_SUMMARY
+            echo "✅ All tests passed successfully." >> $GITHUB_STEP_SUMMARY
           else
-            echo "Some tests failed." >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Test Configuration:" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ secrets.WALLET_PASSWORD }}" ]; then
-            echo "- Test wallet password configured (transfer tests active)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- Test wallet password missing (transfer tests skipped)" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Some tests failed." >> $GITHUB_STEP_SUMMARY
           fi
       
       - name: Post success comment on PR
@@ -69,12 +87,17 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const body = `## Build & Test Pipeline Passed
+            const body = `## ✅ Build & Test Pipeline Passed
+            
             All quality checks have passed successfully.
+            
             | Check | Status |
             |-------|--------|
-            | QA Tests | Passed |
-            Ready for review.`;
+            | Build | ✅ Passed |
+            | Wallet Setup | ✅ Verified |
+            | QA Tests | ✅ Passed |
+            
+            Ready for review! 🚀`;
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -88,10 +111,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const body = `## Build & Test Pipeline Failed
+            const body = `## ❌ Build & Test Pipeline Failed
+            
             | Check | Status |
             |-------|--------|
-            | QA Tests | Failed |
+            | Build | ${{ steps.build.outcome == 'success' && '✅ Passed' : '❌ Failed' }} |
+            | Wallet Setup | ${{ steps.verify.outcome == 'success' && '✅ Verified' : '❌ Failed' }} |
+            | QA Tests | ❌ Failed |
+            
             Please check the [Actions tab](${context.payload.repository.html_url}/actions/runs/${context.runId}) for details.`;
             
             github.rest.issues.createComment({
@@ -100,3 +127,9 @@ jobs:
               repo: context.repo.repo,
               body
             });
+      
+      - name: Cleanup keyring on failure
+        if: failure()
+        run: |
+          echo "Cleaning up keyring..."
+          pkill -9 gnome-keyring-daemon || true
