@@ -2,6 +2,10 @@
 
 MNEE CLI is a command-line interface tool designed for interacting with MNEE USD.
 
+[![Build & Test](https://github.com/mnee-xyz/mnee-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mnee-xyz/mnee-cli/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/@mnee/cli.svg)](https://www.npmjs.com/package/@mnee/cli)
+
 ## Features
 
 - Self custody wallet
@@ -16,7 +20,7 @@ MNEE CLI is a command-line interface tool designed for interacting with MNEE USD
 ### Windows & macOS
 
 ```sh
-npm install -g mnee-cli
+npm install -g @mnee/cli
 ```
 
 ### Linux
@@ -32,19 +36,19 @@ npm install -g mnee-cli
    **Ubuntu/Debian:**
    ```sh
    sudo apt-get install libsecret-1-dev gnome-keyring
-   npm install -g mnee-cli
+   npm install -g @mnee/cli
    ```
 
    **Fedora/RHEL:**
    ```sh
    sudo dnf install libsecret-devel gnome-keyring
-   npm install -g mnee-cli
+   npm install -g @mnee/cli
    ```
 
    **Arch Linux:**
    ```sh
    sudo pacman -S libsecret gnome-keyring
-   npm install -g mnee-cli
+   npm install -g @mnee/cli
    ```
 
 2. **For Headless/Server Environments**
@@ -67,6 +71,20 @@ After installing, you can use the `mnee` command in your terminal:
 ```sh
 mnee
 ```
+## Local QA-Test
+
+## For all tests run
+
+```sh
+npm test
+```
+
+## For Individual tests run
+
+```sh
+node --test qa-test/<test-name>
+```
+
 
 ## Commands
 

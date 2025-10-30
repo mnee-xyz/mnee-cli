@@ -1,2 +1,3 @@
 node_modules/
 mnee-cli*.tgz
+.env

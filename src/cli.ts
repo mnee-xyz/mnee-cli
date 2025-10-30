@@ -432,6 +432,13 @@ program
 
       // Filter by amount range
       if (options.min !== undefined || options.max !== undefined) {
+        if (
+          (options.min !== undefined && (isNaN(options.min) || options.min < 0.00001 ))||
+          (options.max !== undefined && (isNaN(options.max) || options.max < 0.00001 ))
+        ) {
+          console.error(colors.error("Min must be >=0.00001 and Max must be a positive number"))
+          process.exit(1);
+        }
         history = history.filter((tx) => {
           const amount = mneeInstance.fromAtomicAmount(tx.amount || 0);
           if (options.min !== undefined && amount < options.min) return false;
@@ -441,7 +448,12 @@ program
       }
 
       // Apply limit if specified
-      if (options.limit && options.limit > 0) {
+      if (options.limit !== undefined) {
+        if (typeof options.limit !== 'number' || isNaN(options.limit) || options.limit <= 0) {
+          console.error(colors.error('Invalid limit: must be a positive integer greater than 0.'));
+          process.exit(1);
+        }
+
         history = history.slice(0, options.limit);
       }
 
