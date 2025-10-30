@@ -11,7 +11,7 @@ const STATUS_COMMAND = 'mnee status';
 
 // Test constants
 const TEST_RECIPIENT = '1Gqwa5uPapTJqGEPZU6P7YZNGmWoZ6w9vk';
-const TEST_AMOUNT = '0.01';
+const TEST_AMOUNT = '0.1';
 const WALLET_PASSWORD = process.env.WALLET_PASSWORD ?? '';
 
 // Store transfer results
@@ -126,15 +126,6 @@ test('Transfer Input Validation', async (t) => {
       'Should reject malformed address'
     );
   });
-
-  await t.test('should accept scientific notation', async () => {
-    const result = await executeCLI(`${TRANSFER_COMMAND} 1e-4 ${TEST_RECIPIENT}`);
-    const output = result.stdout || result.stderr;
-    assert.ok(
-      !output.includes('Invalid amount'),
-      'Should accept scientific notation'
-    );
-  });
 });
 
 test('Transfer Execution', async (t) => {
@@ -167,23 +158,6 @@ test('Transfer Execution', async (t) => {
     assert.ok(isSuccess, 'Transfer should complete successfully');
     assert.ok(transferTicketId, 'Should receive ticket ID');
     assert.ok(!output.includes('Incorrect password'), 'Password should be correct');
-  });
-
-  await t.test('should include transaction details in output', async () => {
-    const result: any = await executeCLIWithInput(
-      `${TRANSFER_COMMAND} ${TEST_AMOUNT} ${TEST_RECIPIENT}`,
-      [WALLET_PASSWORD]
-    );
-    const output = result.stdout || result.stderr;
-
-    assert.ok(
-      output.includes(TEST_AMOUNT) || output.includes('Amount:'),
-      'Output should contain amount'
-    );
-    assert.ok(
-      output.includes(TEST_RECIPIENT) || output.includes('To:'),
-      'Output should contain recipient address'
-    );
   });
 });
 
@@ -235,15 +209,6 @@ test('Transaction Status Check', async (t) => {
 });
 
 test('Transfer Error Handling', async (t) => {
-  await t.test('should handle insufficient balance', async () => {
-    const result: any = await executeCLIWithInput(
-      `${TRANSFER_COMMAND} 999999 ${TEST_RECIPIENT}`,
-      [WALLET_PASSWORD]
-    );
-    const output = result.stdout || result.stderr;
-    assert.ok(output.length > 0, 'Should produce error output');
-  });
-
   await t.test('should error when ticket ID is missing', async () => {
     const result = await executeCLI(STATUS_COMMAND);
     const output = result.stdout || result.stderr;

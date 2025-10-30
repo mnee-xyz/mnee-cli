@@ -1,0 +1,109 @@
+name: MNEE CLI Tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test:no-build
+        env:
+          CI: true
+          NODE_ENV: test
+          WALLET_PASSWORD: ${{ secrets.WALLET_PASSWORD }}
+
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: CI (GitHub Actions)" >> $GITHUB_STEP_SUMMARY
+          echo "Node Version: 20.x" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "All tests passed successfully." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Some tests failed." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Test Configuration:" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.WALLET_PASSWORD }}" ]; then
+            echo "- Test wallet password configured (transfer tests active)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Test wallet password missing (transfer tests skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Post success comment on PR
+        if: github.event_name == 'pull_request' && success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## Build & Test Pipeline Passed
+
+            All quality checks have passed successfully.
+
+            | Check | Status |
+            |-------|--------|
+            | QA Tests | Passed |
+
+            Ready for review.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+
+      - name: Post failure comment on PR
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## Build & Test Pipeline Failed
+
+            | Check | Status |
+            |-------|--------|
+            | QA Tests | Failed |
+
+            Please check the [Actions tab](${context.payload.repository.html_url}/actions/runs/${context.runId}) for details.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });

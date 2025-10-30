@@ -6,6 +6,7 @@ import { getActiveWallet, getAllWallets } from '../dist/utils/keytar.js';
 
 const execAsync = promisify(exec);
 const CLI_COMMAND = 'mnee balance';
+const TEST_WALLET_NAME = 'cli-test';
 
 // Store actual output for summary
 let actualOutput = '';
@@ -25,15 +26,36 @@ async function executeCLI(command: string) {
   }
 }
 
-test('Balance Prerequisites', async (t) => {
-  await t.test('should have at least one wallet', async () => {
+test('Setup: Set Active Wallet', async (t) => {
+  await t.test('should have cli-test  wallet', async () => {
     const wallets = await getAllWallets();
-    assert.ok(wallets.length > 0, 'At least one wallet should exist');
+    const wallet = wallets.find((w: { name: string; }) => w.name === TEST_WALLET_NAME);
+    assert.ok(wallet, `Wallet "${TEST_WALLET_NAME}" should exist`);
   });
 
+  await t.test('should set cli-test  as active using mnee use command', async () => {
+    const result = await executeCLI(`mnee use ${TEST_WALLET_NAME}`);
+    // Wait for the command to complete (has 1200ms setTimeout)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    const output = result.stdout || result.stderr;
+    assert.ok(output.length > 0, 'Use command should produce output');
+    
+    // Verify the wallet is now active
+    const activeWallet = await getActiveWallet();
+    assert.strictEqual(activeWallet?.name, TEST_WALLET_NAME, `Wallet "${TEST_WALLET_NAME}" should be set as active`);
+  });
+});
+
+test('Balance Prerequisites', async (t) => {
   await t.test('should have active wallet set', async () => {
     const activeWallet = await getActiveWallet();
     assert.ok(activeWallet, 'An active wallet must be set');
+  });
+
+  await t.test('should have active wallet as cli-test ', async () => {
+    const activeWallet = await getActiveWallet();
+    assert.strictEqual(activeWallet?.name, TEST_WALLET_NAME, `Active wallet should be "${TEST_WALLET_NAME}"`);
   });
 
   await t.test('should have active wallet in sandbox environment', async () => {
