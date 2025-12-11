@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Official CLI tool for MNEE wallet management, stablecoin transactions, and secure key storage",
   "main": "dist/cli.js",
   "type": "module",
